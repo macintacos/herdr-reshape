@@ -1,0 +1,123 @@
+id                = "user.reshape"
+name              = "Reshape"
+version           = "0.1.0"
+min_herdr_version = "0.8.0"
+description       = "Move the focused pane, and best-fit a tab into an even grid"
+# macOS only because that is where the behaviour below was measured. Nothing
+# here is platform-specific — it drives herdr and nothing else — so Linux needs
+# a run of the same measurements rather than a code change.
+platforms = ["macos"]
+
+# Compiled at install time. herdr runs build commands during a GitHub
+# `plugin install`, after confirmation and before it registers the plugin, so a
+# failed build means nothing is registered rather than a half-working plugin.
+#
+# `herdr plugin link` does NOT run these — it leaves a local checkout alone — so
+# a linked checkout needs `mise run build` run once by hand.
+[[build]]
+command = ["go", "build", "-o", "bin/herdr-reshape", "."]
+
+# A new pane always lands on a halved split, so three panes come out 50/25/25
+# rather than in thirds. This squares the tab up as it happens — but only when it
+# was already even, because an uneven tab has been tuned by hand and re-fitting
+# it would throw that away. The gate is the same predicate as idempotence: run
+# the tab's layout backwards over the pane that just arrived, and ask whether a
+# fit would have changed anything.
+#
+# The hook's `HERDR_PANE_ID` is the pane that was just created — measured, not
+# assumed, because herdr's space-label plugin records that a plugin's
+# HERDR_PANE_ID is
+# "whichever pane was focused when the event fired", which would be the wrong
+# leaf entirely. On 0.8.2 a `--no-focus` split made from another tab still hands
+# this hook the new pane, and HERDR_PLUGIN_EVENT_JSON carries the same id. That
+# is the whole payload the command needs; the tab and its layout come from one
+# `pane.layout` call.
+#
+# ponytail: a *scripted* burst of splits mostly gets no auto-fit at all, and that
+# is the gate being right rather than a bug — by the time each hook runs, the
+# other new panes have already made the tab uneven, so every one of them
+# declines. Measured over 54 bursts: splitting by hand fitted every time,
+# splitting in a loop with no pause fitted none, and no run ever corrupted a
+# layout. Rarely two hooks overlap and leave the tab part-way fitted. All three
+# outcomes are one `fit` away from even, which is why this stays
+# undebounced and unserialised: the fix would be this plugin's first piece of
+# on-disk state, and the layout being the only state is the whole design.
+[[events]]
+on      = "pane.created"
+command = ["./bin/herdr-reshape", "created"]
+
+# The other half of the same job. Closing a pane collapses its split into the
+# sibling, and the sibling takes the *whole* slot rather than an even share of
+# the tab — thirds minus the middle pane is a third beside two thirds. So a close
+# does knock a tab off the grid, and the same gate decides whether to square it
+# back up.
+#
+# Two events, because the two ways a pane can die are measured to be disjoint on
+# 0.8.2: `pane.closed` fires for an explicit close (`prefix+x`, `herdr pane
+# close`) and `pane.exited` for a shell that ended on its own (`exit`, ctrl-d).
+# Neither fires for the other, so hooking one would fit after half of the closes
+# and puzzle the user about the other half.
+#
+# Both fire *after* the collapse, and neither payload carries a tab id — the
+# pane_id they do carry is already `pane_not_found`. The `closed` subcommand
+# works from wherever focus landed instead, and the gate makes the
+# background-tab case harmless.
+[[events]]
+on      = "pane.closed"
+command = ["./bin/herdr-reshape", "closed"]
+
+[[events]]
+on      = "pane.exited"
+command = ["./bin/herdr-reshape", "closed"]
+
+# No `[[startup]]` sweep either, though a restore looks like it wants one. The
+# only gate that would not trample a hand-tuned tab is "is this tab still even",
+# and that is the same predicate a fit uses to decide it has nothing to do — so a
+# tab passing the gate is one a fit would leave alone, on every input, and a tab
+# that came back genuinely off-grid fails the gate and is skipped. What would
+# catch a restore hazard is a rect/ratio disagreement, and no `pane resize` can
+# fix that: herdr owns the rects.
+
+# Actions rather than paths in config.toml, so the bindings keep working wherever
+# the plugin is registered from — and so all five entry points are declared next
+# to the event that feeds them.
+#
+# A move re-orients the pane against its *sibling*, which is not the same as
+# travelling to the pane in that direction: with A beside B stacked over C, and B
+# focused, moving right puts B beside C — travelling right would reach nothing.
+# herdr has no primitive for this. `pane move` answers `same_tab` for every
+# within-tab target, so anything but a plain reorder is a round trip out to a
+# temporary tab and back, which is why these are actions and not `pane move`
+# keybindings. The terminal survives both hops, so a running process never
+# notices, and the temporary tab removes itself the moment it empties.
+[[actions]]
+id          = "move-left"
+title       = "Move the pane left"
+description = "Re-orient the focused pane to the left of its neighbour"
+command     = ["./bin/herdr-reshape", "move", "left"]
+
+[[actions]]
+id          = "move-right"
+title       = "Move the pane right"
+description = "Re-orient the focused pane to the right of its neighbour"
+command     = ["./bin/herdr-reshape", "move", "right"]
+
+[[actions]]
+id          = "move-up"
+title       = "Move the pane up"
+description = "Re-orient the focused pane above its neighbour"
+command     = ["./bin/herdr-reshape", "move", "up"]
+
+[[actions]]
+id          = "move-down"
+title       = "Move the pane down"
+description = "Re-orient the focused pane below its neighbour"
+command     = ["./bin/herdr-reshape", "move", "down"]
+
+# The manual half of the same arithmetic, for a tab already off the grid — and
+# the way back onto auto-fit, since a fitted tab reads as even again.
+[[actions]]
+id          = "fit"
+title       = "Best-fit the tab"
+description = "Square this tab's panes up into an even grid"
+command     = ["./bin/herdr-reshape", "fit"]

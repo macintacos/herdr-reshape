@@ -1,0 +1,70 @@
+# golangci-lint v2 — lints via `run`, formats via `fmt`. hk drives both.
+# https://golangci-lint.run/
+version: "2"
+linters:
+  enable:
+    # Extras
+    - errname
+    - exhaustive
+    - gocritic
+    - gosec
+    - misspell
+    - revive
+    - tagalign
+    # Defaults (https://golangci-lint.run/usage/linters/#enabled-by-default)
+    - errcheck
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+    #
+    # Deliberately not enabled:
+    #
+    # noinlineerr bans `if err := f(); err != nil`, which is the most common
+    # idiom in Go and the one this codebase is written in throughout.
+    #
+    # nonamedreturns bans named results outright. Named results are how a
+    # function returning several values of the same type says which is which;
+    # a naked return, the thing that rule actually exists to prevent, is
+    # already caught by review.
+  exclusions:
+    rules:
+      # This plugin's whole job is to drive herdr as a subprocess, so G204/G702
+      # fire constantly on code doing exactly what it is meant to do:
+      #   G204/G702  subprocess launched with a variable, and taint reaching it —
+      #              the binary is always a literal and exec.Command passes an
+      #              argv array with no shell between it and the process, so the
+      #              worst an argument can be is one herdr rejects. What "taints"
+      #              it is the user's own pane id and their own chord.
+      # The file rules below fire on nothing today — the layout herdr reports is
+      # the only state this plugin keeps, so it opens no files. They are carried
+      # anyway because the exclusion set is transcribed from herdr-scratch as a
+      # unit, and a log file arriving later should not also have to argue with
+      # the linter:
+      #   G301/G302/G306  directory and file modes — 0755/0644 is the convention
+      #                   for the XDG dirs herdr also reads
+      #   G304  file opened via a variable path — an XDG path is computed, never
+      #         a literal
+      # Everything else gosec checks (hardcoded credentials, weak crypto, …)
+      # stays on.
+      - linters: [gosec]
+        text: "G204|G301|G302|G304|G306|G702"
+      # cobra fixes the RunE signature, so an unused `cmd` or `args` is the
+      # framework's shape rather than dead code.
+      - linters: [revive]
+        text: "unused-parameter"
+formatters:
+  # golines is deliberately absent: it rewrites line breaks the author chose,
+  # and nothing here is long enough to need it. Add it with a reason if that
+  # changes.
+  enable:
+    - gofumpt
+    - goimports
+  settings:
+    gofumpt:
+      module-path: github.com/macintacos/herdr-reshape
+      extra:
+        group-params: true
+    goimports:
+      local-prefixes:
+        - github.com/macintacos/herdr-reshape

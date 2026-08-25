@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+#MISE description="Check herdr-plugin.toml's version against a release version"
+
+set -euo pipefail
+
+# Run by hand as `mise run version-check 0.2.0`, before tagging a release: it
+# says whether the manifest is level with the version you are about to tag.
+#
+# Pre-staged for the release pipeline EXC-1182 brings, which is why it takes
+# plain positional arguments rather than mise's #USAGE parsing — goreleaser's
+# before hook execs it with no shell and no mise to route through — and why the
+# snapshot branch below handles an argument nothing passes yet.
+version="${1:?usage: version-check <version> [is-snapshot]}"
+
+# A snapshot's version is invented from the last tag plus a commit
+# (0.5.0-SNAPSHOT-73f6ee1). There is no tag for the manifest to be level with, so
+# there is nothing here to compare it against.
+if [ "${2:-false}" = "true" ]; then
+	echo "version-check: $version is a snapshot; no tag to be level with"
+	exit 0
+fi
+
+# taplo, rather than a hand-rolled regex: it is already pinned in mise.toml and
+# already runs in two hk steps, it is not fooled by a trailing comment or by
+# taplo's own align_entries padding, and a missing key exits non-zero here rather
+# than arriving below as an empty string that reads like a version mismatch.
+manifest=$(taplo get -f herdr-plugin.toml version)
+
+if [ "$manifest" != "$version" ]; then
+	echo "version-check: herdr-plugin.toml says '${manifest}', you asked for '${version}'" >&2
+	echo "Bump the manifest and commit it before tagging." >&2
+	exit 1
+fi
+
+echo "version-check: herdr-plugin.toml and the tag agree on $version"
