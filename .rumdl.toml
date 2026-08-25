@@ -1,8 +1,8 @@
 # rumdl lints AND formats Markdown: `rumdl check` lints, `rumdl fmt` formats, and
 # hk drives both. https://rumdl.dev
 [global]
-# MD033 (inline HTML) is off because the README uses <kbd> for keys and <details>
-# for the collapsed install section. MD034 (bare URLs) off to match.
+# MD033 (inline HTML) is off so the README can use <kbd> for chords and <details>
+# to collapse a long section; MD034 (bare URLs) off to match.
 disable = ["MD033", "MD034"]
 
 # Respect .gitignore when scanning directories.
