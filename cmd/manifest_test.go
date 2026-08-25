@@ -128,8 +128,13 @@ func assertEveryCommandDeclared(t *testing.T, root *cobra.Command, m testManifes
 	}
 
 	for _, c := range root.Commands() {
-		// cobra adds these itself; the manifest has no reason to name them.
-		if c.Name() == "help" || c.Name() == "completion" {
+		// cobra adds help and completion itself; the manifest has no reason to
+		// name them. link is different in kind from the other four: the manifest
+		// describes what herdr can invoke, and link is what installs the
+		// manifest — it is run by a human and by a Homebrew hook, never by
+		// herdr, so declaring it as an action would offer a keybinding for
+		// installing the plugin.
+		if c.Name() == "help" || c.Name() == "completion" || c.Name() == "link" {
 			continue
 		}
 		if !declared[c.Name()] {
