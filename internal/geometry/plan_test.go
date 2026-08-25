@@ -97,6 +97,60 @@ func TestFitCalls(t *testing.T) {
 	}
 }
 
+// TestFitDrivesTheRightDivider checks each call moves the divider it was meant
+// to, not a neighbouring one.
+//
+// [FitCalls] records the divider it intends; driven works out the one herdr
+// would really move. They have to agree, or a fit quietly drags some other
+// divider around and never converges. This is the check that fails if the
+// driving leaf is taken from the wrong side of its divider.
+func TestFitDrivesTheRightDivider(t *testing.T) {
+	for name, layout := range fixtures {
+		t.Run(name, func(t *testing.T) {
+			root, target := readFixture(layout)
+			for _, call := range FitCalls(root, target) {
+				if got := driven(root, call.Pane, call.Direction); got != call.Split {
+					t.Errorf("resizing %s %s moves %q, not %q", call.Pane, call.Direction, got, call.Split)
+				}
+			}
+		})
+	}
+}
+
+// TestFitConverges checks every fit lands inside the pass bound, which is what
+// makes it safe to run on every pane event.
+func TestFitConverges(t *testing.T) {
+	for _, c := range []struct {
+		layout Layout
+		want   int
+		why    string
+	}{
+		{fittedAcross, 0, "an even tab needs no passes at all"},
+		{leftTwoRight, 0, "nor does one that is already a 2x2 grid"},
+		{threeAcross, 1, "one divider, one pass"},
+		{threeByTwo, 1, "three splits, but only one of them off"},
+		{handTuned, 2, "a clamped call needs a second to close the rest"},
+	} {
+		t.Run(c.why, func(t *testing.T) {
+			if got := passes(c.layout); got != c.want {
+				t.Errorf("passes = %d, want %d", got, c.want)
+			}
+		})
+	}
+}
+
+// TestFitLandsOnScreen checks a fitted pane renders within landing cells of its
+// even share — the half of the proof that ratio arithmetic cannot give.
+func TestFitLandsOnScreen(t *testing.T) {
+	for name, layout := range landable {
+		t.Run(name, func(t *testing.T) {
+			if got := drift(layout); got > landing {
+				t.Errorf("drift = %d cells, want within %d", got, landing)
+			}
+		})
+	}
+}
+
 // TestMovePlan checks a move re-orients against the sibling, not against travel
 // direction — the distinction the whole command exists for.
 func TestMovePlan(t *testing.T) {

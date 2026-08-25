@@ -1,5 +1,7 @@
 package geometry
 
+import "math"
+
 // Fixtures measured from herdr 0.8.2 with `pane.layout`, on a 149x52 tab area.
 //
 // They are the oracle this port is checked against: every number here came off
@@ -301,4 +303,185 @@ var stackedPair = layoutOf(
 func readFixture(layout Layout) (Node, Ratios) {
 	root := Tree(layout)
 	return root, EvenRatios(root, layout.Area)
+}
+
+// --- the herdr simulator --------------------------------------------------
+//
+// A model of the *server*, not of the plugin, which is why it lives in the test
+// file: it reimplements herdr 0.8.2's measured resize rule independently of
+// [FitCalls], so a fit's own claim about which divider it drives can be checked
+// against what herdr would really move.
+
+// landing is the number of cells a fitted pane may end up from an exactly even
+// share. Targets are exact in ratio space, so this is purely what rendering
+// costs: each nesting level rounds its rect to whole cells once, and the
+// deepest layout worth fitting is a handful deep. It bounds what lands on
+// screen; [Tolerance] bounds what counts as one grid line, which is a different
+// question — and it bounds what the tests accept rather than what the package
+// does, which is why it is not a package constant.
+const landing = 2
+
+// fixtures is every fixture a fit is checked against, so a new one joins all of
+// them at once.
+var fixtures = map[string]Layout{
+	"three across":          threeAcross,
+	"a 2x2 grid":            leftTwoRight,
+	"the 3x2 example":       threeByTwo,
+	"a hand-tuned tab":      handTuned,
+	"an under-tuned tab":    underTuned,
+	"a left-nested tab":     leftNested,
+	"an already-fitted tab": fittedAcross,
+	"two stacked panes":     stackedPair,
+	"a deeply nested row":   deepRow,
+}
+
+// landable is fixtures minus deepRow, the one excluded from the landing bound:
+// it holds panes a single cell wide, so no arrangement of it is within landing
+// of an even share. Everything else can actually land, and has to.
+var landable = func() map[string]Layout {
+	out := make(map[string]Layout, len(fixtures)-1)
+	for name, layout := range fixtures {
+		if name != "a deeply nested row" {
+			out[name] = layout
+		}
+	}
+	return out
+}()
+
+// chain traces the path from node down to pane, or nil if it is not below it.
+func chain(node Node, pane PaneID) []Node {
+	split, ok := node.(*Split)
+	if !ok {
+		if node.(*Leaf).Pane == pane {
+			return []Node{node}
+		}
+		return nil
+	}
+	for _, kid := range split.Kids {
+		if found := chain(kid, pane); found != nil {
+			return append([]Node{node}, found...)
+		}
+	}
+	return nil
+}
+
+// driven works out which divider `pane.resize(pane, direction)` actually moves,
+// returning "" when none does.
+//
+// This is herdr 0.8.2's measured rule, and the whole reason it is written out
+// here: the divider on the **named side** of the pane, innermost first — and
+// where that side is the tab edge, the one on the opposite side instead. It was
+// read off all sixteen pane/direction cells of the 3x2 fixture, and it is what
+// makes a fit's choice of driving leaf checkable without a running server.
+func driven(root Node, pane PaneID, direction Direction) SplitID {
+	path := chain(root, pane)
+	if path == nil {
+		return ""
+	}
+	leaf, axis := path[len(path)-1].(*Leaf), direction.Axis()
+
+	var onAxis []*Split
+	for _, node := range path[:len(path)-1] {
+		if split, ok := node.(*Split); ok && split.Direction == axis {
+			onAxis = append(onAxis, split)
+		}
+	}
+
+	asked, other := leaf.Rect.Start(axis), leaf.Rect.End(axis)
+	if direction.Forward() {
+		asked, other = other, asked
+	}
+	for _, edge := range []int{asked, other} {
+		for i := len(onAxis) - 1; i >= 0; i-- {
+			if onAxis[i].Divider() == edge {
+				return onAxis[i].ID
+			}
+		}
+	}
+	return ""
+}
+
+// drive applies resizes the way herdr would, resolving each to the divider it
+// moves.
+//
+// Deliberately keyed off [driven] rather than off the split id the call records:
+// that is what makes the harness catch a driving leaf picked from the wrong side
+// of its divider, instead of assuming the call lands where it meant to.
+func drive(root Node, calls []Resize) Node {
+	moved := map[SplitID]float64{}
+	for _, call := range calls {
+		id := driven(root, call.Pane, call.Direction)
+		if id == "" {
+			continue
+		}
+		delta := call.Amount
+		if !call.Direction.Forward() {
+			delta = -delta
+		}
+		moved[id] += delta
+	}
+
+	var step func(Node) Node
+	step = func(node Node) Node {
+		split, ok := node.(*Split)
+		if !ok {
+			return node
+		}
+		out := *split
+		out.Ratio = min(max(split.Ratio+moved[split.ID], MinRatio), MaxRatio)
+		out.Kids = [2]Node{step(split.Kids[0]), step(split.Kids[1])}
+		return &out
+	}
+	return relayout(step(root), root.Bounds())
+}
+
+// passes runs the real fit loop against simulated resizes, and counts the
+// rounds. A layout still asking for work after [MaxPasses] reports one more
+// than the bound, which is what a convergence check fails on.
+func passes(layout Layout) int {
+	root := Tree(layout)
+	target := EvenRatios(root, layout.Area)
+	for done := 0; done <= MaxPasses; done++ {
+		calls := FitCalls(root, target)
+		if len(calls) == 0 {
+			return done
+		}
+		root = drive(root, calls)
+		target = Targets(root, NewGrid(leafRects(root), layout.Area))
+	}
+	return MaxPasses + 1
+}
+
+// drift fits a layout, then reports the worst gap between a pane and its even
+// share.
+//
+// Convergence is proved in ratio space, where the arithmetic is exact. This is
+// the other half: what an exact ratio actually renders as once each nesting
+// level has rounded its rect to whole cells.
+func drift(layout Layout) int {
+	root := Tree(layout)
+	lines := NewGrid(leafRects(root), layout.Area)
+	target := Targets(root, lines)
+	for range MaxPasses {
+		calls := FitCalls(root, target)
+		if len(calls) == 0 {
+			break
+		}
+		root = drive(root, calls)
+		lines = NewGrid(leafRects(root), layout.Area)
+		target = Targets(root, lines)
+	}
+
+	worst := 0
+	for _, leaf := range Leaves(root) {
+		for _, axis := range []Axis{AxisRight, AxisDown} {
+			cells := len(lines.Lines(axis)) - 1
+			spanned := lines.Index(axis, leaf.Rect.End(axis)) - lines.Index(axis, leaf.Rect.Start(axis))
+			even := float64(spanned) * float64(layout.Area.Size(axis)) / float64(cells)
+			// RoundToEven, not math.Round: Python's round() breaks a half to
+			// even, and this number is compared against a bound of 2.
+			worst = max(worst, int(math.RoundToEven(math.Abs(float64(leaf.Rect.Size(axis))-even))))
+		}
+	}
+	return worst
 }

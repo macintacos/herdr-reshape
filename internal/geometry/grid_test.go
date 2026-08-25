@@ -127,6 +127,36 @@ func TestCollapsedFromEven(t *testing.T) {
 	}
 }
 
+// TestDegenerateRow checks a row too deep to even out degrades instead of
+// failing.
+//
+// Splitting the rightmost pane over and over ends in panes a single cell wide.
+// Their edges collapse into one grid line, which leaves the innermost split
+// spanning no column and the one outside it wanting everything — the two ways
+// this arithmetic can come apart, and both are reachable by hand in a few
+// keystrokes.
+func TestDegenerateRow(t *testing.T) {
+	root, target := readFixture(deepRow)
+	want := []SplitID{"s0", "s1", "s2", "s3", "s4", "s5", "s6"}
+	if got := splitNames(root); !slices.Equal(got, want) {
+		t.Errorf("seven dividers, got %v", got)
+	}
+	if _, aimed := target["s6"]; aimed {
+		t.Error("a split spanning no grid column has no even share to aim at")
+	}
+	// Unclamped, s5's target stays at 1.0 — a ratio herdr will not accept — so
+	// every pass re-issues the same refused call and the tab never reads as even.
+	if target["s5"] != MaxRatio {
+		t.Errorf("and the one outside it wants 1.0, which is clamped, got %v", target["s5"])
+	}
+	if got := passes(deepRow); got != 1 {
+		t.Errorf("it still settles, in one pass, got %d", got)
+	}
+	if got := drift(deepRow); got <= landing {
+		t.Errorf("though one-cell panes can never land evenly, got %d", got)
+	}
+}
+
 // TestParsesRealJSON checks the model reads a pane.layout reply as herdr
 // actually sends one — extra fields and all.
 func TestParsesRealJSON(t *testing.T) {
