@@ -29,18 +29,23 @@ linters:
     # already caught by review.
   exclusions:
     rules:
-      # This plugin's whole job is to drive tmux and herdr as subprocesses and
-      # to own files under the user's XDG directories, so these fire constantly
-      # on code doing exactly what it is meant to do:
+      # This plugin's whole job is to drive herdr as a subprocess, so G204/G702
+      # fire constantly on code doing exactly what it is meant to do:
       #   G204/G702  subprocess launched with a variable, and taint reaching it —
       #              the binary is always a literal and exec.Command passes an
       #              argv array with no shell between it and the process, so the
-      #              worst an argument can be is one tmux rejects. What "taints"
+      #              worst an argument can be is one herdr rejects. What "taints"
       #              it is the user's own pane id and their own chord.
+      # The file-mode and file-path rules are pre-declared rather than currently
+      # needed. This plugin keeps no state — the layout herdr reports is the only
+      # state it has, which is the whole design — so nothing here opens a file
+      # yet. They are kept so the set matches herdr-scratch's, whose toolchain
+      # this is a transcription of, and so a log file later does not arrive with
+      # a lint change attached:
       #   G301/G302/G306  directory and file modes — 0755/0644 is the convention
       #                   for the XDG dirs herdr also reads
-      #   G304  file opened via a variable path — the config and log paths are
-      #         computed, which is the point of ConfigPath and LogPath
+      #   G304  file opened via a variable path — an XDG path is computed, never
+      #         a literal
       # Everything else gosec checks (hardcoded credentials, weak crypto, …)
       # stays on.
       - linters: [gosec]

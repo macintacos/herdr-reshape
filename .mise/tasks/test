@@ -7,7 +7,7 @@ set -euo pipefail
 
 pkg="${usage_pkg:-./...}"
 
-# `go test internal/reshape` looks for a package of that name in the standard
+# `go test cmd` looks for a package of that name in the standard
 # library and fails confusingly. A directory that really exists gets the ./
 # prefix it needs; anything else — ./..., a full import path — passes through.
 if [ -d "$pkg" ]; then

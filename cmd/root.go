@@ -18,7 +18,11 @@ even grid.
 
 Each subcommand is invoked by a different part of herdr: move and fit by
 keybindings, created and closed by pane events.`,
-	SilenceUsage: true,
+	// Both, not just SilenceUsage: cobra prints its own `Error: …` line
+	// independently of the usage dump, and Execute below already reports the
+	// failure in this command's own voice.
+	SilenceUsage:  true,
+	SilenceErrors: true,
 }
 
 // Execute runs the CLI with the version it was built as, reporting a failure as
