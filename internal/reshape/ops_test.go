@@ -226,6 +226,60 @@ func TestMoveAnnouncesARefusedReattach(t *testing.T) {
 	})
 }
 
+// TestMoveAnnouncesWhenTheReattachFailsOnTheWire is the same stranded pane as a
+// refusal, reached the other way. herdr words some refusals as an error reply
+// rather than as changed:false, and the socket can simply drop — either way the
+// pane is in a temporary tab and stderr reaches nobody, so both announce.
+func TestMoveAnnouncesWhenTheReattachFailsOnTheWire(t *testing.T) {
+	client, f := clientOf(layoutResult(leftTwoRight), ok, failReply, ok)
+
+	movedIt, err := client.Move("A", geometry.DirectionRight)
+	if err == nil {
+		t.Fatal("the failure is still reported — the plugin log keeps the detail")
+	}
+	if movedIt {
+		t.Error("the pane never landed")
+	}
+	wantMethods(t, f, "pane.layout", "pane.move", "pane.move", "notification.show")
+	wantCall(t, f, 4, "notification.show", map[string]any{
+		"title": "Move failed",
+		"body":  "A is in a temporary tab; move it back by hand.",
+		"sound": "request",
+	})
+}
+
+// TestMoveReportsAPaneThatMovedAsMoved covers the two failures that happen
+// *after* the pane is back in its tab. It is visible from there, so neither is
+// announced — but neither one un-moves it either, and the return says so.
+func TestMoveReportsAPaneThatMovedAsMoved(t *testing.T) {
+	t.Run("the swap back fails", func(t *testing.T) {
+		// offsetRows is uneven, so no fit follows and the swap is the last call.
+		client, f := clientOf(layoutResult(offsetRows), ok, moved(true), failReply)
+
+		movedIt, err := client.Move("A", geometry.DirectionLeft)
+		if err == nil {
+			t.Fatal("still reported")
+		}
+		if !movedIt {
+			t.Error("the pane is in the target tab, on the wrong side of it")
+		}
+		wantMethods(t, f, "pane.layout", "pane.move", "pane.move", "pane.swap")
+	})
+
+	t.Run("the fit afterwards fails", func(t *testing.T) {
+		client, f := clientOf(layoutResult(leftTwoRight), ok, moved(true), failReply)
+
+		movedIt, err := client.Move("A", geometry.DirectionRight)
+		if err == nil {
+			t.Fatal("still reported")
+		}
+		if !movedIt {
+			t.Error("the pane moved; only squaring the grid up afterwards did not")
+		}
+		wantMethods(t, f, "pane.layout", "pane.move", "pane.move", "pane.layout")
+	})
+}
+
 // --- created and closed ---------------------------------------------------
 
 // TestCreatedFitsATabThatWasEvenBeforeTheSplit runs the layout backwards over

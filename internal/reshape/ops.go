@@ -39,9 +39,13 @@ func (c *Client) Fit(pane geometry.PaneID) (int, error) {
 				return issued, err
 			}
 			if !changed {
-				// herdr refused this divider, so the rest of this pass was
-				// planned against a layout that no longer describes the tab.
-				// Re-plan instead of pushing on with stale numbers.
+				// A refusal is evidence some other fit in the burst already
+				// moved the tab out from under this snapshot, so the rest of
+				// this pass was planned against a layout that no longer
+				// describes it. Re-plan instead of pushing on with stale
+				// numbers. Refused on the *first* call there is nothing to
+				// re-plan from, and the pass-shifted-nothing break below ends
+				// the loop.
 				break
 			}
 			moved = true
@@ -91,32 +95,53 @@ func (c *Client) Move(pane geometry.PaneID, direction geometry.Direction) (bool,
 	// grid back afterwards.
 	wasEven := geometry.IsEven(root, geometry.EvenRatios(root))
 
-	// Out, then back beside the neighbour. The terminal survives both hops, so
-	// whatever is running never notices, and the temporary tab removes itself
-	// the moment it empties.
+	moved, err := c.reattach(pane, layout.TabID, plan, direction)
+	if err != nil || !moved {
+		return moved, err
+	}
+	if wasEven {
+		// The pane is where it was asked to go, so a failure here is reported
+		// but does not change the answer.
+		_, err = c.Fit(pane)
+	}
+	return true, err
+}
+
+// reattach is the round trip [geometry.ReorientReattach] calls for: out to a
+// temporary tab and back beside the neighbour, split along direction's axis. It
+// reports whether the pane ended up somewhere the user can see.
+//
+// The terminal survives both hops, so whatever is running never notices, and
+// the temporary tab removes itself the moment it empties.
+func (c *Client) reattach(
+	pane geometry.PaneID, tab geometry.TabID,
+	plan geometry.Move, direction geometry.Direction,
+) (bool, error) {
 	if err := c.MoveToNewTab(pane); err != nil {
 		return false, err
 	}
-	landed, err := c.MoveBeside(pane, layout.TabID, plan.Target, direction.Axis())
-	if err != nil {
-		return false, err
-	}
-	if !landed {
+
+	landed, err := c.MoveBeside(pane, tab, plan.Target, direction.Axis())
+	if err != nil || !landed {
 		// The pane is in a temporary tab until that call lands. If it did not,
 		// say so — the pane is still alive, with whatever was running still
 		// running, but it is somewhere the user was not looking and nothing
 		// else will go and find it.
-		return false, c.Notify("Move failed", fmt.Sprintf("%s is in a temporary tab; move it back by hand.", pane))
+		//
+		// A socket error strands it exactly the way a refusal does and reaches
+		// only the plugin log, so both announce. The error still wins the
+		// return, so the log keeps the detail.
+		body := fmt.Sprintf("%s is in a temporary tab; move it back by hand.", pane)
+		if notifyErr := c.Notify("Move failed", body); err == nil {
+			err = notifyErr
+		}
+		return false, err
 	}
+
+	// Visible from here on, so a failure below is one the user can see and put
+	// right — it does not get the announcement above.
 	if plan.SwapBack {
-		if err := c.Swap(pane, plan.Target); err != nil {
-			return false, err
-		}
-	}
-	if wasEven {
-		if _, err := c.Fit(pane); err != nil {
-			return false, err
-		}
+		return true, c.Swap(pane, plan.Target)
 	}
 	return true, nil
 }
@@ -178,22 +203,29 @@ func (c *Client) tabTree(pane geometry.PaneID) (geometry.Node, geometry.Layout, 
 	if err != nil {
 		return nil, geometry.Layout{}, err
 	}
-	root, err := tree(layout)
+	root, err := treeFrom(layout)
 	if err != nil {
 		return nil, geometry.Layout{}, err
 	}
 	return root, layout, nil
 }
 
-// tree is [geometry.Tree] with its two documented panics turned into an error.
+// treeFrom is [geometry.Tree] with a panic turned into an error.
 //
-// Recovered here rather than pre-empted: validating first means re-deriving
+// Recovered rather than pre-empted: validating first means re-deriving
 // nodeFrom's child-matching search outside the package that owns it, which is a
 // second copy of the one part of this that can be wrong — and a copy that
 // drifts silently. A recover cannot disagree with Tree's real preconditions,
-// and it turns both cases into the one line on stderr cmd.Execute already
-// prints.
-func tree(layout geometry.Layout) (root geometry.Node, err error) {
+// and it turns the two Tree documents — an area naming no box, and a split
+// whose children the reply omits — into the one line on stderr cmd.Execute
+// already prints.
+//
+// It catches every panic, not only those two, so a bug inside geometry arrives
+// here wearing a bad reply's clothing. That is the deliberate trade: this runs
+// on every pane.created, and a goroutine dump per split is the outcome the
+// one-line report exists to prevent. The message is the panic's own, so it
+// still says which it was.
+func treeFrom(layout geometry.Layout) (root geometry.Node, err error) {
 	defer func() {
 		if panicked := recover(); panicked != nil {
 			root, err = nil, fmt.Errorf("pane.layout: %v", panicked)

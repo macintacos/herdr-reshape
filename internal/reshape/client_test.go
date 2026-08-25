@@ -36,12 +36,20 @@ type fake struct {
 	calls   []call
 }
 
+// failReply scripts a call that fails on the wire rather than answering. No
+// `result` object can express a dropped connection, and the operations behave
+// differently on one than on a reply that says no.
+const failReply = ""
+
 func (f *fake) do(method string, params map[string]any) (json.RawMessage, error) {
 	f.calls = append(f.calls, call{method: method, params: params})
 	if len(f.calls) > len(f.replies) {
 		return nil, fmt.Errorf("fake: call %d (%s) ran off a %d-reply script", len(f.calls), method, len(f.replies))
 	}
-	return json.RawMessage(f.replies[len(f.calls)-1]), nil
+	if reply := f.replies[len(f.calls)-1]; reply != failReply {
+		return json.RawMessage(reply), nil
+	}
+	return nil, fmt.Errorf("fake: %s failed on the wire", method)
 }
 
 // methods is the sequence of method names recorded, which is what most
@@ -162,8 +170,8 @@ func TestRoundTripSpeaksOneLineEachWay(t *testing.T) {
 
 // TestRoundTripAcceptsAReplyWithNoTrailingNewline covers a server that writes a
 // complete reply and closes: the read returns the bytes alongside io.EOF, which
-// is data rather than a failure. The Python's `while b"\n" not in reply` loop
-// broke on the same empty chunk.
+// is data rather than a failure — a complete reply is a complete reply, and
+// herdr is under no obligation to keep the connection open after sending one.
 func TestRoundTripAcceptsAReplyWithNoTrailingNewline(t *testing.T) {
 	path := listen(t, func(conn net.Conn) {
 		_, _ = bufio.NewReader(conn).ReadString('\n')
@@ -180,8 +188,8 @@ func TestRoundTripAcceptsAReplyWithNoTrailingNewline(t *testing.T) {
 }
 
 // TestRoundTripRejectsAReplyCarryingNoResult checks that herdr saying anything
-// other than a result is a failure the caller hears about. The Python raised
-// KeyError here; nothing documents herdr's error shape, so none is invented.
+// other than a result is a failure the caller hears about. Nothing documents
+// herdr's error shape, so none is invented here.
 func TestRoundTripRejectsAReplyCarryingNoResult(t *testing.T) {
 	for _, reply := range []string{`{"error":{"code":"pane_not_found"}}`, `{"result":null}`, `not json`} {
 		t.Run(reply, func(t *testing.T) {
@@ -300,9 +308,10 @@ func TestResizeSendsTheDividerCallAndReadsChanged(t *testing.T) {
 	}
 }
 
-// TestResizeRejectsAReplyWithNoResizeObject diverges from the Python, which
-// stopped the fit silently. The tab is unchanged either way, so the only
-// difference is a line in the plugin log where there was silence.
+// TestResizeRejectsAReplyWithNoResizeObject checks a reply that says nothing
+// about the divider is an error rather than a silent stop to the fit. The tab
+// is unchanged either way, so the only difference is a line in the plugin log
+// where there would have been silence.
 func TestResizeRejectsAReplyWithNoResizeObject(t *testing.T) {
 	client, _ := clientOf(`{}`)
 
@@ -355,9 +364,9 @@ func TestMoveBesideSendsTheTabDestinationAndReadsChanged(t *testing.T) {
 	}
 }
 
-// TestMoveBesideReadsAMissingResultAsRefused keeps the Python's reading: the
-// caller announces on false, and a reply that does not say it landed is not a
-// reply that says it did.
+// TestMoveBesideReadsAMissingResultAsRefused pins the safe direction: the
+// caller announces on false, and a reply that does not say the pane landed is
+// not a reply that says it did.
 func TestMoveBesideReadsAMissingResultAsRefused(t *testing.T) {
 	client, _ := clientOf(`{}`)
 

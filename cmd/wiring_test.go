@@ -8,6 +8,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 )
@@ -56,15 +57,7 @@ type herdrStub struct {
 // at construction.
 func serveHerdr(t *testing.T, replies map[string]string) *herdrStub {
 	t.Helper()
-	// Not t.TempDir(): it embeds the test name, and a unix socket address is
-	// capped at 104 bytes on darwin.
-	dir, err := os.MkdirTemp("", "rs")
-	if err != nil {
-		t.Fatalf("temp dir: %v", err)
-	}
-	t.Cleanup(func() { _ = os.RemoveAll(dir) })
-
-	path := filepath.Join(dir, "h.sock")
+	path := sockPath(t)
 	ln, err := net.Listen("unix", path)
 	if err != nil {
 		t.Fatalf("listen: %v", err)
@@ -85,6 +78,22 @@ func serveHerdr(t *testing.T, replies map[string]string) *herdrStub {
 
 	t.Setenv("HERDR_SOCKET_PATH", path)
 	return stub
+}
+
+// sockPath is where a test's socket goes.
+//
+// Not t.TempDir(): it embeds the test's name in the path, and a unix socket
+// address is capped at 104 bytes on darwin. The names in this file are long
+// enough to cross that, and the failure is `invalid argument` from the address
+// length — which a test asserting only "some error" reads as success.
+func sockPath(t *testing.T) string {
+	t.Helper()
+	dir, err := os.MkdirTemp("", "rs")
+	if err != nil {
+		t.Fatalf("temp dir: %v", err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	return filepath.Join(dir, "h.sock")
 }
 
 func (s *herdrStub) answer(conn net.Conn) {
@@ -180,6 +189,49 @@ func TestCreatedUsesOnlyTheEventsPaneID(t *testing.T) {
 	}
 }
 
+// TestCreatedActsOnTheEventsPane is the other half of that rule, and the half
+// that pins the variable name: with only the empty case covered, misspelling
+// HERDR_PANE_ID would read "" on every split, fit nothing, and pass.
+func TestCreatedActsOnTheEventsPane(t *testing.T) {
+	stub := serveHerdr(t, map[string]string{
+		"pane.layout": evenTab,
+		"pane.list":   `{"result":{"panes":[{"pane_id":"B","tab_id":"w1:tQ","focused":true}]}}`,
+	})
+	// Focus is elsewhere, which on 0.8.2 is a real state for this hook.
+	setPane(t, "C", "B")
+
+	if err := run(t, "created"); err != nil {
+		t.Fatalf("created: %v", err)
+	}
+	got := stub.requests()
+	if len(got) == 0 || got[0].Method != "pane.layout" {
+		t.Fatalf("want pane.layout first, got %v", methodsOf(got))
+	}
+	if got[0].Params["pane_id"] != "C" {
+		t.Errorf("created reads the tab of the pane that was just created, got %v", got[0].Params["pane_id"])
+	}
+}
+
+// TestMoveSendsTheDirectionItWasGiven checks the argument survives the wiring —
+// the only other literal in this file's RunE bodies that nothing else executes.
+func TestMoveSendsTheDirectionItWasGiven(t *testing.T) {
+	stub := serveHerdr(t, map[string]string{"pane.layout": evenTab})
+	setPane(t, "A", "A")
+
+	if err := run(t, "move", "right"); err != nil {
+		t.Fatalf("move: %v", err)
+	}
+	got := stub.requests()
+	// A|B with A focused, moved right, is the swap case: one layout read, then
+	// the trade. A direction that did not arrive would plan something else.
+	if len(got) != 2 || got[1].Method != "pane.swap" {
+		t.Fatalf("want pane.layout then pane.swap, got %v", methodsOf(got))
+	}
+	if got[1].Params["source_pane_id"] != "A" || got[1].Params["target_pane_id"] != "B" {
+		t.Errorf("A trades places with B, got %v", got[1].Params)
+	}
+}
+
 // TestClosedAsksWhichPaneHasFocus pins the third rule. pane.closed and
 // pane.exited both fire after the split has collapsed, so the event's own pane
 // is already pane_not_found, and neither event carries a tab id — wherever
@@ -229,11 +281,18 @@ func TestMoveAnnouncesWhenHerdrNamesNoPane(t *testing.T) {
 // TestASocketThatIsNotThereIsOneLine checks the event-hook path: a herdr that
 // is not running has to fail as a plugin-log line, not a panic.
 func TestASocketThatIsNotThereIsOneLine(t *testing.T) {
-	t.Setenv("HERDR_SOCKET_PATH", filepath.Join(t.TempDir(), "absent.sock"))
+	t.Setenv("HERDR_SOCKET_PATH", sockPath(t))
 	setPane(t, "A", "A")
 
-	if err := run(t, "fit"); err == nil {
+	err := run(t, "fit")
+	if err == nil {
 		t.Fatal("want an error")
+	}
+	// Specifically the connect failure, not some other way of not working: an
+	// over-length socket address fails here too, and would let this test pass
+	// without ever reaching a herdr that is not running.
+	if !strings.Contains(err.Error(), "no such file or directory") {
+		t.Errorf("want a connect failure, got %v", err)
 	}
 }
 

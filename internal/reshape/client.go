@@ -3,8 +3,8 @@
 // that drive [github.com/macintacos/herdr-reshape/internal/geometry] through
 // them.
 //
-// The split is the one CLAUDE.md asks for. internal/geometry only computes;
-// this package only talks; cmd is glue. What lives here is everything that
+// internal/geometry only computes; this package only talks; cmd is glue.
+// What lives here is everything that
 // depends on the environment rather than on arithmetic — and that is where the
 // surprises are, every one of them measured against herdr 0.8.2 rather than
 // inferred:
@@ -40,8 +40,8 @@ import (
 // server that has gone quiet has to stop being this plugin's problem quickly.
 const Timeout = 5 * time.Second
 
-// ErrNoPane is returned when herdr did not say which pane a command is acting
-// on, and asking which one has focus did not answer either.
+// ErrNoPane is returned when nothing herdr said names the pane a command is
+// acting on — no environment variable, and no focused pane either.
 //
 // A sentinel rather than a plain failure because the caller does not report it
 // as one: it is a user-visible outcome, so it is announced and the command
@@ -60,8 +60,8 @@ type Client struct {
 }
 
 // NewClient builds a client over the socket at path, opening nothing — a
-// connection is made per call, the way the Python's `request` did it. So a
-// command tree can be built, and its manifest checked, without a herdr running.
+// connection is made per call. So a command tree can be built, and its manifest
+// checked, without a herdr running.
 func NewClient(path string, timeout time.Duration) *Client {
 	return &Client{
 		do: func(method string, params map[string]any) (json.RawMessage, error) {
@@ -90,8 +90,7 @@ func SocketPath(getenv func(string) string) string {
 //
 // One request, one connection, one line each way — the shape herdr's socket
 // speaks. The envelope is decoded as far as `result` and no further: herdr's
-// error shape is not documented and the Python never read it, so no error
-// schema is invented here.
+// error shape is not documented, so no error schema is invented here.
 func roundTrip(path string, timeout time.Duration, method string, params map[string]any) (json.RawMessage, error) {
 	conn, err := net.Dial("unix", path)
 	if err != nil {
@@ -153,7 +152,7 @@ func (c *Client) Layout(pane geometry.PaneID) (geometry.Layout, error) {
 		return geometry.Layout{}, fmt.Errorf("pane.layout: decode %s: %w", result, err)
 	}
 	if payload.Layout.TabID == "" {
-		return geometry.Layout{}, fmt.Errorf("pane.layout: reply carries no tab_id: %s", result)
+		return geometry.Layout{}, fmt.Errorf("pane.layout: reply carries no layout, or none with a tab_id: %s", result)
 	}
 	return payload.Layout, nil
 }
@@ -173,9 +172,9 @@ func (c *Client) Resize(pane geometry.PaneID, direction geometry.Direction, amou
 		return false, err
 	}
 	// A pointer so a reply with no resize object at all is distinguishable from
-	// one reporting no change. The Python stopped the fit silently on the
-	// former; the tab is unchanged either way, so the only difference is a line
-	// in the plugin log where there was silence.
+	// one reporting no change. The former is an error rather than a silent stop
+	// to the fit: the tab is unchanged either way, so the only difference is a
+	// line in the plugin log where there would have been silence.
 	var payload struct {
 		Resize *struct {
 			Changed bool `json:"changed"`
@@ -235,9 +234,10 @@ func (c *Client) MoveBeside(pane geometry.PaneID, tab geometry.TabID, target geo
 	if err != nil {
 		return false, err
 	}
-	// Absent reads as false, which is the Python's reading and the safe
-	// direction: a reply that does not say the pane landed is not a reply that
-	// says it did, and the caller announces on false.
+	// Absent reads as false rather than being rejected the way [Client.Resize]
+	// rejects a missing resize object, because false here is announced and
+	// false there is not: a reply that does not say the pane landed is not a
+	// reply that says it did.
 	var payload struct {
 		MoveResult struct {
 			Changed bool `json:"changed"`
@@ -265,6 +265,9 @@ func (c *Client) Notify(title, body string) error {
 }
 
 // FocusedPane asks herdr which pane has focus, for an entry point handed no id.
+//
+// A reply where nothing is focused returns [ErrNoPane] rather than a failure:
+// callers announce or fall silent on it, they do not report it.
 func (c *Client) FocusedPane() (geometry.PaneID, error) {
 	result, err := c.do("pane.list", map[string]any{})
 	if err != nil {

@@ -40,8 +40,10 @@ keybindings, created and closed by pane events.`,
 	// read as a sentence.
 	root.SetVersionTemplate("{{.Version}}\n")
 
-	// Built once, and opening nothing — a connection is made per call. So the
-	// manifest test can build trees without a herdr running.
+	// Built once, and opening nothing — a connection is made per call, so the
+	// manifest test can build trees without a herdr running. The socket path is
+	// resolved here too, once: a later change to HERDR_SOCKET_PATH does not
+	// reach this client.
 	client := reshape.NewClient(reshape.SocketPath(os.Getenv), reshape.Timeout)
 
 	move := &cobra.Command{
@@ -52,8 +54,8 @@ keybindings, created and closed by pane events.`,
 		ValidArgs: []string{"left", "right", "up", "down"},
 		Args:      cobra.MatchAll(cobra.ExactArgs(1), cobra.OnlyValidArgs),
 		RunE: func(_ *cobra.Command, args []string) error {
-			pane, ok, err := actingPane(client, "Cannot move a pane")
-			if !ok {
+			pane, err := actingPane(client, "Cannot move a pane")
+			if pane == "" {
 				return err
 			}
 			_, err = client.Move(pane, geometry.Direction(args[0]))
@@ -65,8 +67,8 @@ keybindings, created and closed by pane events.`,
 		Short: "Square this tab's panes up into an even grid",
 		Args:  cobra.NoArgs,
 		RunE: func(_ *cobra.Command, _ []string) error {
-			pane, ok, err := actingPane(client, "Cannot fit this tab")
-			if !ok {
+			pane, err := actingPane(client, "Cannot fit this tab")
+			if pane == "" {
 				return err
 			}
 			_, err = client.Fit(pane)
@@ -84,6 +86,9 @@ keybindings, created and closed by pane events.`,
 			// to the focused pane would gate on — and fit — some other tab.
 			pane := os.Getenv("HERDR_PANE_ID")
 			if pane == "" {
+				// Nothing to act on and nobody to tell: an event hook has no
+				// keypress behind it, so a notification would surface a herdr
+				// problem as a reshape one.
 				return nil
 			}
 			_, err := client.Created(geometry.PaneID(pane))
@@ -110,6 +115,8 @@ keybindings, created and closed by pane events.`,
 			// grid by hand is one the gate declines.
 			pane, err := client.FocusedPane()
 			if errors.Is(err, reshape.ErrNoPane) {
+				// Silent for the same reason created is: no keypress behind
+				// this, so there is nobody a notification would reach.
 				return nil
 			}
 			if err != nil {
@@ -124,21 +131,22 @@ keybindings, created and closed by pane events.`,
 	return root
 }
 
-// actingPane resolves the pane a keybinding is acting on, reporting whether
-// there is one to go on with.
+// actingPane resolves the pane a keybinding is acting on, returning an empty
+// pane when there is none to go on with.
 //
 // herdr naming no pane is a user-visible outcome rather than a failure: move
 // and fit run from keypresses, where stderr reaches nobody. So it is announced
-// under title and reported as not-ok, and the command exits 0 having said so.
-func actingPane(client *reshape.Client, title string) (geometry.PaneID, bool, error) {
+// under title and the command exits 0 having said so — which is why the empty
+// pane comes back with a nil error.
+func actingPane(client *reshape.Client, title string) (geometry.PaneID, error) {
 	pane, err := reshape.ThisPane(os.Getenv, client)
 	if errors.Is(err, reshape.ErrNoPane) {
-		return "", false, client.Notify(title, "herdr did not say which pane this is.")
+		return "", client.Notify(title, "herdr did not say which pane this is.")
 	}
 	if err != nil {
-		return "", false, err
+		return "", err
 	}
-	return pane, true, nil
+	return pane, nil
 }
 
 // Execute runs the CLI with the version it was built as, reporting a failure as
