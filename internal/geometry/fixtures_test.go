@@ -123,3 +123,142 @@ func paneRects(layout Layout) []Rect {
 	}
 	return rects
 }
+
+// threeAcross is A | B | C, split twice to the right. Lopsided: 75 cells, then
+// 37 and 37.
+var threeAcross = layoutOf(
+	[]paneSpec{
+		{"A", Rect{35, 1, 75, 52}},
+		{"B", Rect{110, 1, 37, 52}},
+		{"C", Rect{147, 1, 37, 52}},
+	},
+	[]splitSpec{
+		{"root", AxisRight, 0.5, Rect{35, 1, 149, 52}},
+		{"s1", AxisRight, 0.5, Rect{110, 1, 74, 52}},
+	},
+)
+
+// leftTwoRight is A full-height on the left, B over C on the right. Already an
+// even 2x2 grid.
+var leftTwoRight = layoutOf(
+	[]paneSpec{
+		{"A", Rect{35, 1, 75, 52}},
+		{"B", Rect{110, 1, 74, 26}},
+		{"C", Rect{110, 27, 74, 26}},
+	},
+	[]splitSpec{
+		{"root", AxisRight, 0.5, Rect{35, 1, 149, 52}},
+		{"s1", AxisDown, 0.5, Rect{110, 1, 74, 52}},
+	},
+)
+
+// fittedAcross is threeAcross after a fit: root on 1/3, so the columns are 50,
+// 50 and 49.
+var fittedAcross = layoutOf(
+	[]paneSpec{
+		{"A", Rect{35, 1, 50, 52}},
+		{"B", Rect{85, 1, 50, 52}},
+		{"C", Rect{135, 1, 49, 52}},
+	},
+	[]splitSpec{
+		{"root", AxisRight, 1.0 / 3.0, Rect{35, 1, 149, 52}},
+		{"s1", AxisRight, 0.5, Rect{85, 1, 99, 52}},
+	},
+)
+
+// deepRow is what splitting the rightmost pane seven times actually produces:
+// every split halves, so the row runs 75, 37, 19, 9, 5, 2, 1, 1 cells. The
+// degenerate end is the point. Panes narrower than [Tolerance] collapse into
+// one grid line, which leaves the innermost split spanning no column at all and
+// the one outside it wanting a ratio of 1.0 — so this is the fixture that
+// reaches both the divide-by-zero guard and the clamp, and the only one that
+// cannot be made even.
+var deepRow = layoutOf(
+	[]paneSpec{
+		{"A", Rect{35, 1, 75, 52}},
+		{"B", Rect{110, 1, 37, 52}},
+		{"C", Rect{147, 1, 19, 52}},
+		{"D", Rect{166, 1, 9, 52}},
+		{"E", Rect{175, 1, 5, 52}},
+		{"F", Rect{180, 1, 2, 52}},
+		{"G", Rect{182, 1, 1, 52}},
+		{"H", Rect{183, 1, 1, 52}},
+	},
+	[]splitSpec{
+		{"s0", AxisRight, 0.5, Rect{35, 1, 149, 52}},
+		{"s1", AxisRight, 0.5, Rect{110, 1, 74, 52}},
+		{"s2", AxisRight, 0.5, Rect{147, 1, 37, 52}},
+		{"s3", AxisRight, 0.5, Rect{166, 1, 18, 52}},
+		{"s4", AxisRight, 0.5, Rect{175, 1, 9, 52}},
+		{"s5", AxisRight, 0.5, Rect{180, 1, 4, 52}},
+		{"s6", AxisRight, 0.5, Rect{182, 1, 2, 52}},
+	},
+)
+
+// evenMinusMiddle is fittedAcross after the *middle* pane closes: s1 collapses
+// into C, which takes the whole right two thirds, and root keeps the 1/3 it
+// had. The shape a close gate has to recognise — uneven now, even one pane ago.
+var evenMinusMiddle = layoutOf(
+	[]paneSpec{
+		{"A", Rect{35, 1, 50, 52}},
+		{"C", Rect{85, 1, 99, 52}},
+	},
+	[]splitSpec{{"root", AxisRight, 1.0 / 3.0, Rect{35, 1, 149, 52}}},
+)
+
+// evenFourMinusSecond is an even four-column row after its *second* pane
+// closes: A on the quarter it had, then C and D halving what is left. The
+// closed pane's sibling was the s1 split rather than a leaf, which is the case
+// a leaves-only search misses.
+var evenFourMinusSecond = layoutOf(
+	[]paneSpec{
+		{"A", Rect{35, 1, 37, 52}},
+		{"C", Rect{72, 1, 56, 52}},
+		{"D", Rect{128, 1, 56, 52}},
+	},
+	[]splitSpec{
+		{"root", AxisRight, 0.25, Rect{35, 1, 149, 52}},
+		{"s1", AxisRight, 0.5, Rect{72, 1, 112, 52}},
+	},
+)
+
+// evenRowsMinusMiddle is evenMinusMiddle stood on its side: three even *rows*
+// whose middle pane closed, so C inherits the bottom two thirds. The mirror
+// matters because the pane put back has to be put back on the same axis it left
+// — a search that only ever splits sideways adds a column, leaves the row grid
+// at two, and reads this tab as hand-tuned.
+var evenRowsMinusMiddle = layoutOf(
+	[]paneSpec{
+		{"A", Rect{35, 1, 149, 17}},
+		{"C", Rect{35, 18, 149, 35}},
+	},
+	[]splitSpec{{"root", AxisDown, 1.0 / 3.0, Rect{35, 1, 149, 52}}},
+)
+
+// tunedMinusOne is two panes left over from a tab dragged to a fifth. No pane
+// put back anywhere makes 0.2 an even share, which is what keeps the close gate
+// off a tuned tab.
+var tunedMinusOne = layoutOf(
+	[]paneSpec{
+		{"A", Rect{35, 1, 30, 52}},
+		{"B", Rect{65, 1, 119, 52}},
+	},
+	[]splitSpec{{"root", AxisRight, 0.2, Rect{35, 1, 149, 52}}},
+)
+
+// tunedMinusLast is the same story at the other end of the range: handTuned
+// after C closes.
+var tunedMinusLast = layoutOf(
+	[]paneSpec{
+		{"A", Rect{35, 1, 134, 52}},
+		{"B", Rect{169, 1, 15, 52}},
+	},
+	[]splitSpec{{"root", AxisRight, 0.9, Rect{35, 1, 149, 52}}},
+)
+
+// readFixture reads a fixture the way every entry point does: its tree and its
+// targets.
+func readFixture(layout Layout) (Node, Ratios) {
+	root := Tree(layout)
+	return root, EvenRatios(root, layout.Area)
+}
