@@ -256,6 +256,46 @@ var tunedMinusLast = layoutOf(
 	[]splitSpec{{"root", AxisRight, 0.9, Rect{35, 1, 149, 52}}},
 )
 
+// handTuned is threeAcross dragged well off the grid: A takes nine tenths of
+// the tab. One pane.resize cannot close that, so a fit has to take two.
+var handTuned = layoutOf(
+	[]paneSpec{
+		{"A", Rect{35, 1, 134, 52}},
+		{"B", Rect{169, 1, 8, 52}},
+		{"C", Rect{177, 1, 7, 52}},
+	},
+	[]splitSpec{
+		{"root", AxisRight, 0.9, Rect{35, 1, 149, 52}},
+		{"s1", AxisRight, 0.5, Rect{169, 1, 15, 52}},
+	},
+)
+
+// underTuned is threeAcross dragged the other way: A on a tenth, so a fit has
+// to *raise* the root ratio. Every other fixture lowers one, which leaves the
+// raising branch of the driving-leaf choice — the half that reads from the
+// first child — untested.
+var underTuned = layoutOf(
+	[]paneSpec{
+		{"A", Rect{35, 1, 15, 52}},
+		{"B", Rect{50, 1, 67, 52}},
+		{"C", Rect{117, 1, 67, 52}},
+	},
+	[]splitSpec{
+		{"root", AxisRight, 0.1, Rect{35, 1, 149, 52}},
+		{"s1", AxisRight, 0.5, Rect{50, 1, 134, 52}},
+	},
+)
+
+// stackedPair is A over B, the issue's worked example for a move. Already an
+// even 1x2 grid.
+var stackedPair = layoutOf(
+	[]paneSpec{
+		{"A", Rect{35, 1, 149, 26}},
+		{"B", Rect{35, 27, 149, 26}},
+	},
+	[]splitSpec{{"root", AxisDown, 0.5, Rect{35, 1, 149, 52}}},
+)
+
 // readFixture reads a fixture the way every entry point does: its tree and its
 // targets.
 func readFixture(layout Layout) (Node, Ratios) {
