@@ -27,7 +27,29 @@ measured against 0.8.2, and the event behaviour has not been checked below it.
 Everything else is pinned in `mise.toml`, so [mise](https://mise.jdx.dev) is the only
 other thing you need on `PATH`.
 
+## Install
+
+```bash
+brew install --cask macintacos/tap/herdr-reshape
+herdr-reshape link
+herdr server reload-config
+```
+
+`herdr-reshape link` after **every** install and upgrade, and nothing else does it for
+you. herdr registers a plugin by the real directory holding its manifest, and for a cask
+that is a Caskroom path numbered by version which the next upgrade deletes — so `link`
+copies this build into a directory this plugin owns and registers that instead. Skipping
+it after an upgrade leaves herdr running the release before.
+
+The cask is macOS-only, as Homebrew casks are. The linux archives on each release are for
+`herdr plugin install` and by-hand extraction.
+
+Then bind the actions in `~/.config/herdr/config.toml` — the cask's caveats print the
+worked example — and apply them with `herdr server reload-config`.
+
 ## Build and link a local checkout
+
+The development path, and the one to use for a change you have not released.
 
 ```bash
 git clone https://github.com/macintacos/herdr-reshape.git
@@ -40,7 +62,8 @@ herdr plugin link "$PWD"
 herdr server reload-config
 ```
 
-`link` registers the directory where it stands rather than copying it, so put the checkout
+`herdr plugin link` — herdr's own subcommand, not this plugin's `herdr-reshape link` above
+— registers the directory where it stands rather than copying it, so put the checkout
 somewhere it can live. Check it took:
 
 ```bash
@@ -63,3 +86,5 @@ build leaves nothing registered rather than a half-working plugin.
 
 `hk` runs the formatters and linters on every commit and the tests on every push, so those
 tasks are the same checks the hooks apply — just runnable on demand.
+
+Cutting a release is [`docs/RELEASING.md`](docs/RELEASING.md).

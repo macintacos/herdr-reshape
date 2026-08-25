@@ -3,6 +3,7 @@ package cmd
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -64,6 +65,64 @@ func TestInstallBuildKeepsTheBinaryExecutable(t *testing.T) {
 	if _, mode := readInstalled(t, filepath.Join(root, "bin", "herdr-reshape")); mode&0o111 == 0 {
 		t.Errorf("installed binary mode = %v, want the execute bits set", mode)
 	}
+}
+
+func TestInstallBuildRefusesARootThatIsNotAbsolute(t *testing.T) {
+	// StableRoot joins onto whatever HOME says, so an empty HOME hands this a
+	// relative path — and MkdirAll would then write a plugin tree under whatever
+	// the working directory happened to be and register that with herdr. The
+	// only signal of it would be a plugin herdr silently cannot find later.
+	source := filepath.Join(t.TempDir(), "build")
+	stageBuild(t, source, "0.1.0")
+
+	if err := installBuild(source, filepath.Join(".local", "share", "herdr-reshape")); err == nil {
+		t.Error("installBuild with a relative root = nil, want an error rather than a tree under the cwd")
+	}
+}
+
+func TestLinkRegistersTheRootRatherThanTheBuild(t *testing.T) {
+	// The whole point of the command: herdr must be pointed at the copy, not at
+	// the staging directory the copy came from. Passing source here would look
+	// correct on install and only surface one `brew upgrade` later, as a plugin
+	// herdr no longer has a directory for.
+	source := filepath.Join(t.TempDir(), "build")
+	stageBuild(t, source, "0.1.0")
+	root := filepath.Join(t.TempDir(), "herdr-reshape")
+	herdr, argv := stubHerdr(t)
+
+	var out strings.Builder
+	if err := runLink(source, root, herdr, &out); err != nil {
+		t.Fatal(err)
+	}
+
+	if got := readArgv(t, argv); got != "plugin link "+root {
+		t.Errorf("herdr was called with %q, want %q", got, "plugin link "+root)
+	}
+	if want := "installed " + root + " from " + source + "\n"; out.String() != want {
+		t.Errorf("output = %q, want %q", out.String(), want)
+	}
+}
+
+// stubHerdr writes an executable standing in for herdr, which records the
+// arguments it was called with, and returns both paths.
+func stubHerdr(t *testing.T) (herdr, argv string) {
+	t.Helper()
+	dir := t.TempDir()
+	herdr, argv = filepath.Join(dir, "herdr"), filepath.Join(dir, "argv")
+	script := "#!/bin/sh\nprintf '%s' \"$*\" > " + argv + "\n"
+	if err := os.WriteFile(herdr, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	return herdr, argv
+}
+
+func readArgv(t *testing.T, path string) string {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(data)
 }
 
 func TestInstallBuildRefusesToInstallOverItself(t *testing.T) {

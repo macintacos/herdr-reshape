@@ -8,9 +8,9 @@ package main
 
 import "github.com/macintacos/herdr-reshape/cmd"
 
-// version is what --version reports. There is no release pipeline yet, so every
-// build reports "dev"; a goreleaser build will stamp the tag through
-// `-ldflags -X main.version=`.
+// version is what --version reports. A goreleaser build stamps the release over
+// it through `-ldflags -X main.version=`, so "dev" is what a local `go build`
+// reports and what a stamp that broke would leave behind.
 var version = "dev"
 
 func main() {

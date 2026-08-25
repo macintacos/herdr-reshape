@@ -6,10 +6,10 @@ set -euo pipefail
 # Run by hand as `mise run version-check 0.2.0`, before tagging a release: it
 # says whether the manifest is level with the version you are about to tag.
 #
-# Pre-staged for the release pipeline EXC-1182 brings, which is why it takes
-# plain positional arguments rather than mise's #USAGE parsing — goreleaser's
-# before hook execs it with no shell and no mise to route through — and why the
-# snapshot branch below handles an argument nothing passes yet.
+# Also .goreleaser.yaml's first `before` hook, which is why it takes plain
+# positional arguments rather than mise's #USAGE parsing — goreleaser execs it
+# with no shell and no mise to route through — and why the snapshot branch below
+# reads the `{{ .IsSnapshot }}` that hook passes as its second argument.
 version="${1:?usage: version-check <version> [is-snapshot]}"
 
 # A snapshot's version is invented from the last tag plus a commit

@@ -12,8 +12,10 @@ The steps below are the by-hand path, and the reference for what each one is for
 version computed by [`svu`](https://github.com/caarlos0/svu) rather than typed, and the
 notes drafted from the commit range — which is the usual way to cut one.
 
-The repo has no tags, so `svu current` reports `v0.0.0` and the first release is
-`svu minor` → `v0.1.0` — which is already what `herdr-plugin.toml` says.
+There are no tags yet, so the first release is `svu minor` → `v0.1.0`, which is already
+what `herdr-plugin.toml` says. The numbers below are that first release spelled out; after
+it, they are illustrative — the version is whatever `svu` reports at the time, never one
+typed from here.
 
 ```sh
 $EDITOR herdr-plugin.toml                      # bump `version` to the tag you are cutting
@@ -32,8 +34,9 @@ one more untracked file, and it would fail the release at exactly that point. Dr
 `--release-notes` is fine too; goreleaser then generates the notes from the commit log
 itself.
 
-**Through `mise exec`** because the `before:` hook execs `taplo` and inherits only
-goreleaser's own `PATH` — activated mise has it, `mise exec` has it either way.
+**Through `mise exec`** because the `before:` hook's `version-check` execs `taplo` and
+inherits only goreleaser's own `PATH` — activated mise has it, `mise exec` has it either
+way.
 
 The bump comes first because a `before:` hook compares `herdr-plugin.toml` against the tag
 and fails the release when they disagree. herdr reads the manifest's version rather than
@@ -47,16 +50,17 @@ create the release, `macintacos/homebrew-tap` to commit the cask. A classic PAT 
 `GITHUB_TOKEN`, so it lives in the environment for exactly one command and is never
 committed; `$(mise exec -- gh auth token)` is enough when `gh` is already authenticated.
 
-**Rehearse first.** `goreleaser release --snapshot --clean --skip=publish` builds all four
-targets into `dist/` and renders the cask to `dist/homebrew/Casks/herdr-reshape.rb`
-without touching GitHub, and `goreleaser check` validates the config on its own.
+**Rehearse first.** `mise exec -- goreleaser release --snapshot --clean --skip=publish`
+builds all four targets into `dist/` and renders the cask to
+`dist/homebrew/Casks/herdr-reshape.rb` without touching GitHub, and
+`mise exec -- goreleaser check` validates the config on its own.
 
 **Then check by hand what a cask cannot check for itself.** A formula has `test do`; a
 cask has no equivalent, so these are yours:
 
 ```sh
 brew install --cask macintacos/tap/herdr-reshape
-herdr-reshape --version   # the tag you just cut — "dev" means the ldflags stamp broke
+herdr-reshape --version   # the tag without its v — "dev" means the ldflags stamp broke
 herdr-reshape link        # registers the build; nothing else does
 "$HOME"/.local/share/herdr-reshape/bin/herdr-reshape --version
 ```

@@ -75,10 +75,11 @@ homebrew_casks:
     # needed: this plugin drives herdr's socket and nothing but.
     dependencies:
       - formula: herdr
-    # A cask cannot bind a key or register a plugin for the user, so both are
-    # spelled out here. `link` is not a repair path — it is the step every
-    # install and upgrade needs, because nothing else points herdr at this
-    # build.
+    # A cask cannot bind a key, and this one deliberately does not register the
+    # plugin either — unlike herdr-scratch's, whose post-install hook runs
+    # `link`. So both steps are spelled out here, and `link` is not a repair
+    # path: it is the step every install and upgrade needs, because nothing else
+    # points herdr at this build.
     caveats: |
       Bind the five actions in ~/.config/herdr/config.toml, one block each:
 
@@ -88,8 +89,9 @@ homebrew_casks:
         command     = "user.reshape.fit"
         description = "best-fit the tab"
 
-      The other four action ids are user.reshape.move-left, move-right,
-      move-up and move-down. Apply them with:
+      The other four action ids are user.reshape.move-left,
+      user.reshape.move-right, user.reshape.move-up and
+      user.reshape.move-down. Apply them with:
 
         herdr server reload-config
 

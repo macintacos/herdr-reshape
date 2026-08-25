@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -10,10 +11,6 @@ import (
 
 	"github.com/macintacos/herdr-reshape/internal/reshape"
 )
-
-// installed are the entries copied out of the build: the binary, and the
-// manifest herdr resolves the plugin by.
-var installed = []string{"bin", "herdr-plugin.toml"}
 
 // newLinkCmd builds the subcommand that registers this build with herdr.
 //
@@ -43,24 +40,34 @@ this, and not before.`,
 			if err != nil {
 				return err
 			}
-			root := reshape.StableRoot(os.Getenv)
-
-			if err := installBuild(source, root); err != nil {
-				return err
-			}
-
-			register := exec.Command(herdrBin(), "plugin", "link", root)
-			register.Stderr = os.Stderr
-			if err := register.Run(); err != nil {
-				return err
-			}
-
-			// Ignored deliberately, as everywhere else in this package: a write
-			// to stdout that fails leaves nothing worth doing about it.
-			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "installed %s from %s\n", root, source)
-			return nil
+			return runLink(source, reshape.StableRoot(os.Getenv), herdrBin(os.Getenv), cmd.OutOrStdout())
 		},
 	}
+}
+
+// runLink installs the build at source into root, then points herdr at root.
+//
+// Split out of RunE so the pairing can be tested: it is root that herdr must be
+// given, and handing it source instead reads as a working install right up until
+// the next upgrade deletes the directory it recorded.
+func runLink(source, root, herdr string, out io.Writer) error {
+	if err := installBuild(source, root); err != nil {
+		return err
+	}
+
+	register := exec.Command(herdr, "plugin", "link", root)
+	// Both streams, because this command's own line below says only what it
+	// copied — whatever herdr says about the registration is the other half,
+	// and on a failure it is the only half that names a cause.
+	register.Stdout, register.Stderr = out, os.Stderr
+	if err := register.Run(); err != nil {
+		return fmt.Errorf("herdr plugin link %s: %w", root, err)
+	}
+
+	// Ignored deliberately, as everywhere else in this package: a write to
+	// stdout that fails leaves nothing worth doing about it.
+	_, _ = fmt.Fprintf(out, "installed %s from %s\n", root, source)
+	return nil
 }
 
 // installBuild puts this release's copy of every entry the plugin needs into
@@ -71,6 +78,13 @@ this, and not before.`,
 // version. A link into one is dead the moment the version changes; a copy is
 // only as stale as the last run of this command.
 func installBuild(source, root string) error {
+	// StableRoot joins onto whatever the environment says, so an empty HOME
+	// yields a relative path — and everything below would then build a plugin
+	// tree under the working directory and hand herdr a path that means
+	// something different from wherever it is next read.
+	if !filepath.IsAbs(root) {
+		return fmt.Errorf("plugin root %q is not absolute; set HOME or XDG_DATA_HOME", root)
+	}
 	if err := os.MkdirAll(root, 0o755); err != nil {
 		return err
 	}
@@ -103,7 +117,9 @@ func installBuild(source, root string) error {
 	}
 	defer func() { _ = owned.Close() }()
 
-	for _, name := range installed {
+	// The entries copied out of the build: the binary, and the manifest herdr
+	// resolves the plugin by.
+	for _, name := range []string{"bin", "herdr-plugin.toml"} {
 		// Replace outright rather than merge into, so a file a release stopped
 		// shipping does not linger here forever. os.CopyFS also refuses to
 		// write over a file that is already there.
@@ -126,11 +142,11 @@ func installBuild(source, root string) error {
 // installEntry copies one entry of the build into the directory this plugin
 // owns: a file as itself, a directory as a tree.
 //
-// The two spellings do not agree on permissions. os.CopyFS keeps the source's
-// execute bits and forces the rest to 0666 before umask — so a tree arrives as
-// 0755/0644 under the usual umask and wider under a permissive one — while the
-// file branch reproduces the source's mode exactly. The execute bit is the one
-// that has to survive either way: the manifest's actions and events exec
+// The two spellings do not agree on the mode they ask for. os.CopyFS keeps the
+// source's execute bits and widens the rest to 0666, while the file branch asks
+// for the source's mode exactly; the umask then narrows whichever was asked. The
+// execute bit is the one that has to survive either way — it is the only bit
+// neither path drops: the manifest's actions and events exec
 // ./bin/herdr-reshape directly.
 func installEntry(owned *os.Root, src, name string) error {
 	info, err := os.Stat(src)
@@ -165,12 +181,14 @@ func buildRoot() (string, error) {
 	return filepath.Dir(filepath.Dir(self)), nil // <root>/bin/herdr-reshape
 }
 
-// herdrBin is the herdr to invoke. herdr sets HERDR_BIN_PATH when it runs a
-// plugin command, which names the running herdr rather than whichever one PATH
-// happens to find — and Homebrew's own hooks run with a PATH the prefix is not
-// on at all.
-func herdrBin() string {
-	if herdr := os.Getenv("HERDR_BIN_PATH"); herdr != "" {
+// herdrBin is the herdr to invoke: HERDR_BIN_PATH ahead of a bare herdr, so a
+// caller whose PATH does not carry the Homebrew prefix — a packaging hook, or
+// the release verification in docs/RELEASING.md — can name the one it means.
+//
+// getenv is a parameter for the same reason reshape.StableRoot takes one: the
+// entry point owns the environment read.
+func herdrBin(getenv func(string) string) string {
+	if herdr := getenv("HERDR_BIN_PATH"); herdr != "" {
 		return herdr
 	}
 	return "herdr"

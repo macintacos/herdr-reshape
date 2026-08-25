@@ -124,8 +124,14 @@ values as you go. A stale `$tag` that expands to nothing is not a loud failure �
 **Assemble the notes from the commit range.**
 
 ```sh
-git log --no-merges --pretty='%s (%h)' <prev>..HEAD
+range=$(git rev-parse -q --verify "refs/tags/<prev>" >/dev/null && echo '<prev>..HEAD' || echo HEAD)
+git log --no-merges --pretty="%s (%h)" $range
 ```
+
+The range degrades to `HEAD` because `<prev>` is not always a tag that exists. On a repo
+with no tags — which this one is until v0.1.0 ships — `svu current` reports `v0.0.0` with
+nothing tagged as such, and a bare `v0.0.0..HEAD` dies on `fatal: ambiguous argument`.
+That is the first release, so it is the first thing this step would hit.
 
 Write them to `<somewhere>/release-notes-<tag>.md`, and it **must be outside the repo**
 (the session scratchpad, or `/tmp`). This is not tidiness: goreleaser refuses to release
@@ -174,6 +180,9 @@ key (`taplo get -f herdr-plugin.toml version`) but has no `set`.
 
 ```sh
 # 2. Restore taplo's column alignment on the file just edited — and only that file.
+#    Not in docs/RELEASING.md's by-hand block, and deliberately: taplo.toml sets
+#    align_entries, which a human editing one value in place does not disturb. An
+#    edit written programmatically can, so this step belongs to this file alone.
 mise exec -- taplo format herdr-plugin.toml
 
 # 3. Prove parity locally, before anything is public.
@@ -267,8 +276,8 @@ somebody reads without an agent in the room.
 - **Building or testing locally.** That is `mise run build`, `mise run test`,
   `mise run preflight`.
 - **Rehearsing the release machinery.**
-  `goreleaser release --snapshot --clean --skip=publish` builds everything into `dist/`
-  and touches nothing remote. No tag, no version, no gate — just run it.
+  `mise exec -- goreleaser release --snapshot --clean --skip=publish` builds everything
+  into `dist/` and touches nothing remote. No tag, no version, no gate — just run it.
 - **Fixing the tap.** Editing `macintacos/homebrew-tap` by hand is what the cask config
   exists to end. The one exception is named above: reverting a cask commit for a version
   being abandoned rather than retried (§ Recovery).
