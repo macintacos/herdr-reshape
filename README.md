@@ -19,10 +19,6 @@ onto shared grid lines and puts each divider on the line an even grid would want
 of nested splits comes out even in both directions and fitting an already-fitted tab does
 nothing.
 
-> The manifest declares all five actions and all three events, but the commands behind
-> them are stubs — every one exits non-zero saying so. The grid arithmetic has landed;
-> what is missing is the socket client that wires it to herdr.
-
 ## Requirements
 
 herdr 0.8.0 or newer — that is the manifest's floor. Everything described here was
@@ -43,11 +39,6 @@ mise run build   # `herdr plugin link` does NOT build — this is the step it sk
 herdr plugin link "$PWD"
 herdr server reload-config
 ```
-
-While the commands are still stubs, linking is worth doing deliberately rather than
-leaving in place: the three event hooks run on every pane split and every pane close, and
-each one exits non-zero until the socket client lands. `herdr plugin unlink user.reshape`
-puts it back.
 
 `link` registers the directory where it stands rather than copying it, so put the checkout
 somewhere it can live. Check it took:

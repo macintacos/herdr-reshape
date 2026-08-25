@@ -203,8 +203,7 @@ type Layout struct {
 }
 
 // PaneEntry is the slice of a pane.list reply this plugin reads. No geometry
-// below touches it — it is the wire type the socket client will decode into
-// when it arrives.
+// below touches it — it is the wire type the socket client decodes into.
 type PaneEntry struct {
 	PaneID  PaneID `json:"pane_id"`
 	TabID   TabID  `json:"tab_id"`
