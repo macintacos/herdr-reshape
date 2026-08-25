@@ -36,12 +36,18 @@ other thing you need on `PATH`.
 ```bash
 git clone https://github.com/macintacos/herdr-reshape.git
 cd herdr-reshape
+mise trust       # a fresh clone's mise.toml is untrusted; setup exits 1 without this
 mise run setup   # install the pinned tools, register the git hooks
 mise run build   # `herdr plugin link` does NOT build — this is the step it skips
 
 herdr plugin link "$PWD"
 herdr server reload-config
 ```
+
+While the commands are still stubs, linking is worth doing deliberately rather than
+leaving in place: the three event hooks run on every pane split and every pane close, and
+each one exits non-zero until EXC-1180 lands. `herdr plugin unlink user.reshape` puts it
+back.
 
 `link` registers the directory where it stands rather than copying it, so put the checkout
 somewhere it can live. Check it took:

@@ -74,8 +74,12 @@ hooks {
   // they gate the push instead.
   ["pre-push"] {
     steps = new Mapping<String, Step> {
+      // The manifest and the build task are in the glob because the only test
+      // in the repo exists to guard them — without them, a typo in a command
+      // line is exactly the change that does not trigger the test written for
+      // it. `mise run preflight` runs go test unconditionally either way.
       ["Go(Test)          [[go test]]"] = new Step {
-        glob = "**/*.go"
+        glob = List("**/*.go", "herdr-plugin.toml", ".mise/tasks/build")
         workspace_indicator = "go.mod"
         check = "cd {{workspace}} && go test ./..."
       }

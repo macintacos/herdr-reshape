@@ -36,12 +36,11 @@ linters:
       #              argv array with no shell between it and the process, so the
       #              worst an argument can be is one herdr rejects. What "taints"
       #              it is the user's own pane id and their own chord.
-      # The file-mode and file-path rules are pre-declared rather than currently
-      # needed. This plugin keeps no state — the layout herdr reports is the only
-      # state it has, which is the whole design — so nothing here opens a file
-      # yet. They are kept so the set matches herdr-scratch's, whose toolchain
-      # this is a transcription of, and so a log file later does not arrive with
-      # a lint change attached:
+      # The file rules below fire on nothing today — the layout herdr reports is
+      # the only state this plugin keeps, so it opens no files. They are carried
+      # anyway because the exclusion set is transcribed from herdr-scratch as a
+      # unit, and a log file arriving later should not also have to argue with
+      # the linter:
       #   G301/G302/G306  directory and file modes — 0755/0644 is the convention
       #                   for the XDG dirs herdr also reads
       #   G304  file opened via a variable path — an XDG path is computed, never
@@ -55,9 +54,9 @@ linters:
       - linters: [revive]
         text: "unused-parameter"
 formatters:
-  # golines is deliberately absent. It splits every argument of an over-long
-  # call onto its own line, which breaks up the "key", value pairs that every
-  # slog call here depends on being able to read as pairs.
+  # golines is deliberately absent: it rewrites line breaks the author chose,
+  # and nothing here is long enough to need it. Add it with a reason if that
+  # changes.
   enable:
     - gofumpt
     - goimports

@@ -7,9 +7,10 @@ set -euo pipefail
 
 pkg="${usage_pkg:-./...}"
 
-# `go test cmd` looks for a package of that name in the standard
-# library and fails confusingly. A directory that really exists gets the ./
-# prefix it needs; anything else — ./..., a full import path — passes through.
+# `go test cmd` resolves `cmd` as the Go toolchain's own package pattern rather
+# than this repo's directory — it does not fail, it starts testing all 362 of
+# them. A directory that really exists gets the ./ prefix it needs; anything
+# else — ./..., a full import path — passes through.
 if [ -d "$pkg" ]; then
 	pkg="./${pkg#./}"
 fi

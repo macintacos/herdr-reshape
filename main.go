@@ -8,8 +8,9 @@ package main
 
 import "github.com/macintacos/herdr-reshape/cmd"
 
-// version is stamped in at build time from the tag it was built from. A build
-// that nobody stamped is not a release, and says so.
+// version is what --version reports. There is no release pipeline yet, so every
+// build reports "dev"; a goreleaser build will stamp the tag through
+// `-ldflags -X main.version=`.
 var version = "dev"
 
 func main() {
