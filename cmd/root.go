@@ -11,12 +11,13 @@ import (
 
 // errNotImplemented is what every subcommand below returns. The manifest
 // declares all five actions and all three events so that the plugin registers
-// and binds as its finished self, but the grid arithmetic behind them is being
-// ported from the Python original in EXC-1180 and is not here yet.
+// and binds as its finished self, and internal/geometry holds the arithmetic
+// behind them — but nothing yet talks to herdr's socket, so there is no layout
+// to run it over.
 //
 // One sentinel rather than a message per command: they all fail for the same
 // reason, and there is nothing a caller could do differently for any of them.
-var errNotImplemented = errors.New("not implemented yet — the reshape logic arrives in EXC-1180")
+var errNotImplemented = errors.New("not implemented yet — no socket client wires the geometry up")
 
 // newRootCmd builds a command tree for one run, stamped with the version it was
 // built as.
