@@ -65,8 +65,7 @@ func TestWithout(t *testing.T) {
 	if got := split.Kids[1].Bounds(); got != (Rect{110, 1, 74, 52}) {
 		t.Errorf("B takes the whole slot, got %+v", got)
 	}
-	lines := NewGrid(leafRects(root), tabArea)
-	if !IsEven(root, Targets(root, lines)) {
+	if !IsEven(root, EvenRatios(root)) {
 		t.Error("and the tab before the split was even")
 	}
 
@@ -114,9 +113,14 @@ func TestCollapsedFromEven(t *testing.T) {
 		// gate already leaves it alone; a close gate that fitted it would
 		// square up a tab the split gate had just promised not to touch.
 		{offsetRows, false, "and both gates say so"},
+		// The fail-closed half of fitsEvenly, which no measured fixture is
+		// narrow enough to reach: on a four-cell tab every candidate is squeezed
+		// until not one of its splits has an even share, and "none of no splits
+		// missed" must not read as evidence of an even ancestry.
+		{squeezedPair, false, "a candidate with no even share to hit is not evidence of one"},
 	} {
 		t.Run(c.why, func(t *testing.T) {
-			if got := CollapsedFromEven(Tree(c.layout), tabArea); got != c.want {
+			if got := CollapsedFromEven(Tree(c.layout)); got != c.want {
 				t.Errorf("CollapsedFromEven = %v, want %v", got, c.want)
 			}
 		})

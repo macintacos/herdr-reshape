@@ -27,7 +27,8 @@ const (
 	ReorientReattach Reorient = "reattach"
 )
 
-// Move is the primitive calls that re-orient one pane, read off the layout.
+// Move is how one pane re-orients against its neighbour: the primitive calls it
+// comes down to, read off the layout.
 type Move struct {
 	Kind Reorient
 	// Target is the pane to swap with, or the one to land beside. Empty on

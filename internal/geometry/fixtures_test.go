@@ -27,9 +27,16 @@ type splitSpec struct {
 	box   Rect
 }
 
-// layoutOf builds a trimmed `pane.layout`, written the way the measurements read.
+// layoutOf builds a trimmed `pane.layout` on the measured tab area, written the
+// way the measurements read.
 func layoutOf(panes []paneSpec, dividers []splitSpec) Layout {
-	layout := Layout{TabID: "w1:tQ", Area: tabArea}
+	return layoutIn(tabArea, panes, dividers)
+}
+
+// layoutIn is layoutOf on some other tab, for the one fixture below that is
+// synthetic rather than measured.
+func layoutIn(area Rect, panes []paneSpec, dividers []splitSpec) Layout {
+	layout := Layout{TabID: "w1:tQ", Area: area}
 	for _, p := range panes {
 		layout.Panes = append(layout.Panes, PaneBox{PaneID: p.pane, Rect: p.box})
 	}
@@ -298,11 +305,28 @@ var stackedPair = layoutOf(
 	[]splitSpec{{"root", AxisDown, 0.5, Rect{35, 1, 149, 52}}},
 )
 
+// squeezedPair is the one synthetic fixture: a tab four cells wide, where every
+// column edge merges under [Tolerance] and no re-inserted candidate is left with
+// a split that has an even share to aim at.
+//
+// It is here because it is the only shape that reaches fitsEvenly's fail-closed
+// `aimed` guard — a 149x52 tab is far too wide for its splits to collapse onto
+// one grid line, so every measured fixture leaves that guard untested, and the
+// suite stays green with it removed.
+var squeezedPair = layoutIn(
+	Rect{0, 0, 4, 40},
+	[]paneSpec{
+		{"A", Rect{0, 0, 1, 40}},
+		{"B", Rect{1, 0, 3, 40}},
+	},
+	[]splitSpec{{"root", AxisRight, 0.2, Rect{0, 0, 4, 40}}},
+)
+
 // readFixture reads a fixture the way every entry point does: its tree and its
 // targets.
 func readFixture(layout Layout) (Node, Ratios) {
 	root := Tree(layout)
-	return root, EvenRatios(root, layout.Area)
+	return root, EvenRatios(root)
 }
 
 // --- the herdr simulator --------------------------------------------------
@@ -440,14 +464,14 @@ func drive(root Node, calls []Resize) Node {
 // than the bound, which is what a convergence check fails on.
 func passes(layout Layout) int {
 	root := Tree(layout)
-	target := EvenRatios(root, layout.Area)
+	target := EvenRatios(root)
 	for done := 0; done <= MaxPasses; done++ {
 		calls := FitCalls(root, target)
 		if len(calls) == 0 {
 			return done
 		}
 		root = drive(root, calls)
-		target = Targets(root, NewGrid(leafRects(root), layout.Area))
+		target = EvenRatios(root)
 	}
 	return MaxPasses + 1
 }
@@ -478,8 +502,9 @@ func drift(layout Layout) int {
 			cells := len(lines.Lines(axis)) - 1
 			spanned := lines.Index(axis, leaf.Rect.End(axis)) - lines.Index(axis, leaf.Rect.Start(axis))
 			even := float64(spanned) * float64(layout.Area.Size(axis)) / float64(cells)
-			// RoundToEven, not math.Round: Python's round() breaks a half to
-			// even, and this number is compared against a bound of 2.
+			// RoundToEven, not math.Round: the landing bound was measured
+			// against a half-to-even rounding, so a pane exactly 2.5 cells off
+			// its share has to fall on the same side of it here.
 			worst = max(worst, int(math.RoundToEven(math.Abs(float64(leaf.Rect.Size(axis))-even))))
 		}
 	}

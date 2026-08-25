@@ -11,7 +11,7 @@ import (
 
 // testManifest is the slice of herdr-plugin.toml this file cares about: every
 // place it names a command for herdr to run. Prefixed so the name stays out of
-// the way of whatever EXC-1180 wants to call its own manifest type.
+// the way of a real manifest type, if one ever lands here.
 type testManifest struct {
 	Build []struct {
 		Command []string `toml:"command"`

@@ -1,16 +1,14 @@
 // Package geometry is the half of this plugin that can be wrong: the grid
-// model behind a move and a fit, ported from the Python original a measurement
-// at a time.
+// model behind a move and a fit.
 //
 // It computes and nothing else — no socket, no files, no clock. herdr reports a
 // tab flat (an area, a box per pane, a box per divider, and no parent links at
 // all); [Tree] puts the nesting back, [NewGrid] projects every leaf edge onto
 // shared column and row lines, and everything above those two is arithmetic
 // over grid indices rather than over cells. That is what makes a fit
-// idempotent: fitting a fitted tab computes the ratios it already has, where
-// cell arithmetic would drift by whatever the last rounding cost.
+// idempotent; see [Targets].
 //
-// Three things herdr does that its documentation does not say, every one
+// Four things herdr does that its documentation does not say, every one
 // measured against 0.8.2 and every one load-bearing here:
 //
 //   - pane.resize moves the divider on the *named side* of the pane, falling
@@ -22,9 +20,16 @@
 //     fit at [MaxPasses].
 //   - pane.move will not re-orient a pane inside its own tab: every within-tab
 //     target answers same_tab. See [MovePlan] for what that costs.
+//   - pane.closed and pane.exited both fire *after* the split has collapsed —
+//     pane.layout answers pane_not_found for the pane named in the payload —
+//     and neither carries a tab id. So a close cannot be run backwards. See
+//     [CollapsedFromEven].
 package geometry
 
-import "slices"
+import (
+	"fmt"
+	"slices"
+)
 
 // herdr's opaque identifiers. Distinct types because nothing here ever means
 // one where it says another, and a plain string would let it.
@@ -156,7 +161,7 @@ func (r Rect) End(axis Axis) int {
 	return r.Start(axis) + r.Size(axis)
 }
 
-// Cut splits into the two boxes a divider `first` cells along axis leaves behind.
+// Cut splits r into the two boxes a divider first cells along axis leaves behind.
 func (r Rect) Cut(axis Axis, first int) (Rect, Rect) {
 	if axis == AxisRight {
 		return Rect{X: r.X, Y: r.Y, Width: first, Height: r.Height},
@@ -213,6 +218,11 @@ type Node interface {
 	// Bounds is the box this node fills — the one question both kinds answer the
 	// same way, and what a search reads off a node it has not looked inside.
 	Bounds() Rect
+
+	// node seals the interface over the two types below. Every traversal here
+	// type-asserts without checking, so a third implementation would panic deep
+	// in a descent; unexported, it cannot be written.
+	node()
 }
 
 // Leaf is a pane, and the box it fills.
@@ -223,6 +233,8 @@ type Leaf struct {
 
 // Bounds implements [Node].
 func (l *Leaf) Bounds() Rect { return l.Rect }
+
+func (*Leaf) node() {}
 
 // Split is a divider, the box it cuts, and the two nodes either side of it.
 type Split struct {
@@ -235,6 +247,8 @@ type Split struct {
 
 // Bounds implements [Node].
 func (s *Split) Bounds() Rect { return s.Rect }
+
+func (*Split) node() {}
 
 // Divider is where the two children meet: the far edge of the first one.
 func (s *Split) Divider() int { return s.Kids[0].Bounds().End(s.Direction) }
@@ -293,12 +307,18 @@ func (b SplitBox) bounds() Rect { return b.Rect }
 // The nesting is recovered from the rects rather than from the path-shaped
 // split ids (split_2_10), because the rects are documented output and that id
 // syntax is not.
+//
+// Tree takes a layout herdr really reported, and panics on one no tree can be
+// built from: an area naming no box at all, or a split whose children the reply
+// omits. Both describe a reply that is not a tab, so there is no tree to fall
+// back to — but the caller decoding that reply is the one holding the bytes, and
+// is where the rejection belongs.
 func Tree(layout Layout) Node {
 	// A box is the slot its node fills and children are strictly smaller, so no
 	// two boxes collide: the root split and a lone pane both claim the whole
-	// area, but only one of the two ever exists. Panes go in first so that on
-	// that one shared rect the split wins — reversing these two loops silently
-	// reads a multi-pane tab as a single leaf.
+	// area, but only one of the two ever exists. Panes go in first anyway, so
+	// that a malformed reply carrying both is read as a tree rather than as one
+	// pane.
 	boxes := make(map[Rect]layoutBox, len(layout.Panes)+len(layout.Splits))
 	for _, pane := range layout.Panes {
 		boxes[pane.Rect] = pane
@@ -306,7 +326,11 @@ func Tree(layout Layout) Node {
 	for _, split := range layout.Splits {
 		boxes[split.Rect] = split
 	}
-	return nodeFrom(boxes[layout.Area], boxes)
+	root, ok := boxes[layout.Area]
+	if !ok {
+		panic(fmt.Sprintf("layout area %+v names no pane or split", layout.Area))
+	}
+	return nodeFrom(root, boxes)
 }
 
 // nodeFrom turns one box into a node, finding a split's children by the edges
@@ -348,6 +372,10 @@ func nodeFrom(box layoutBox, boxes map[Rect]layoutBox) Node {
 			(second == nil || rect.Size(axis) > second.bounds().Size(axis)) {
 			second = other
 		}
+	}
+
+	if first == nil || second == nil {
+		panic(fmt.Sprintf("split %s at %+v has no child on one side", split.ID, split.Rect))
 	}
 
 	return &Split{
@@ -405,7 +433,8 @@ func NewGrid(rects []Rect, area Rect) Grid {
 // edges is every edge along axis that could be a grid line, the area's included.
 func edges(rects []Rect, area Rect, axis Axis) []int {
 	found := make([]int, 0, 2*(len(rects)+1))
-	for _, rect := range append([]Rect{area}, rects...) {
+	found = append(found, area.Start(axis), area.End(axis))
+	for _, rect := range rects {
 		found = append(found, rect.Start(axis), rect.End(axis))
 	}
 	return found
