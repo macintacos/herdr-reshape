@@ -54,6 +54,15 @@ func (f *fake) methods() []string {
 	return names
 }
 
+// wantMethods asserts the exact sequence of methods recorded. The sequence is
+// the only observable an operation has, so most of ops_test.go is this.
+func wantMethods(t *testing.T, f *fake, want ...string) {
+	t.Helper()
+	if got := f.methods(); !reflect.DeepEqual(got, want) {
+		t.Errorf("calls:\n got %v\nwant %v", got, want)
+	}
+}
+
 // clientOf builds a client over a scripted fake, returning both so a test can
 // drive the one and read the other.
 func clientOf(replies ...string) (*Client, *fake) {
