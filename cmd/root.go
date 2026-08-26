@@ -127,7 +127,7 @@ keybindings, created and closed by pane events.`,
 		},
 	}
 
-	root.AddCommand(move, fit, created, closed)
+	root.AddCommand(move, fit, created, closed, newLinkCmd())
 	return root
 }
 

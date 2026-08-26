@@ -1,0 +1,123 @@
+# Builds the release artifacts and publishes the Homebrew cask that installs
+# them. Releases are cut from a laptop rather than CI, so docs/RELEASING.md
+# carries the half this file cannot: the tag, the token, and the checks a cask
+# has no `test do` to make for us.
+# https://goreleaser.com
+version: 2
+project_name: herdr-reshape
+before:
+  hooks:
+    # First, because it is the gate: herdr reads the manifest's own `version`,
+    # not the tag, so a tag that disagrees with it publishes a release claiming
+    # to be a version nobody can see. Costs milliseconds and needs no network,
+    # which is the other reason it comes before the download.
+    - ./.mise/tasks/version-check {{ .Version }} {{ .IsSnapshot }}
+    - go mod download
+builds:
+  - env:
+      # Every release cross-compiles three of its four targets from one machine.
+      - CGO_ENABLED=0
+    goos: [darwin, linux]
+    goarch: [amd64, arm64]
+    # -s -w is what a Homebrew formula's std_go_args passes by default, and
+    # main.version is what `herdr-reshape --version` reports. This restates
+    # goreleaser's own default on purpose rather than inheriting it — the stamp
+    # is load-bearing, and a default that quietly changed would leave every
+    # release reporting "dev" with nothing to notice it by.
+    ldflags:
+      - -s -w -X main.version={{ .Version }}
+    # A path, not just a name. `herdr-reshape link` copies bin/ and the manifest
+    # out of two directories above the *resolved* executable —
+    # Dir(Dir(EvalSymlinks(os.Executable()))), cmd/link.go's buildRoot — and it
+    # is that EvalSymlinks which turns the cask's PATH symlink into the staged
+    # Caskroom root. A binary at the archive root would leave the extracted tree
+    # one level short, and link would fail on a bare
+    # `stat .../bin: no such file or directory`.
+    #
+    # Two defaults hold this up, so leave both alone: strip_binary_directory
+    # would flatten the path back out of the archive, and wrap_in_directory
+    # would nest the tree one level deeper than the cask's binary stanza looks.
+    binary: bin/herdr-reshape
+archives:
+  # Naming `files` replaces goreleaser's defaults rather than adding to them, so
+  # LICENSE is listed back explicitly — MIT requires the notice travel with the
+  # binary — and README.md with it. The manifest, beside bin/, is what makes the
+  # extracted tree a plugin root herdr can actually load.
+  - files:
+      - herdr-plugin.toml
+      - LICENSE
+      - README.md
+homebrew_casks:
+  # A cask rather than a formula, because the archive already holds a built
+  # binary and goreleaser's `brews` is soft-deprecated in favour of this. Its
+  # sha256 per architecture is read from the checksums.txt goreleaser generates
+  # by default — it covers the binary the user actually runs, rather than source
+  # someone else's toolchain rebuilt.
+  #
+  # Casks are macOS-only — Homebrew on Linux refuses to install one at all — so
+  # the linux archives above are what Linux installs from: extracted by hand and
+  # registered with `herdr plugin link`, which works because an archive is
+  # already a plugin root. Not `herdr plugin install`, which takes a GitHub
+  # owner/repo and compiles the manifest's [[build]] from source rather than
+  # consuming a release artifact. There is no brew path on Linux, and no
+  # arrangement of this block creates one.
+  - repository:
+      owner: macintacos
+      name: homebrew-tap
+    homepage: https://github.com/macintacos/herdr-reshape
+    description: Move the focused herdr pane, and best-fit a tab into an even grid
+    license: MIT
+    # Spelled out because goreleaser derives the cask's `binary` stanza from the
+    # base name alone, which would point Homebrew at a herdr-reshape sitting at
+    # the top of the staged directory — where the archive deliberately does not
+    # put it. The symlink it makes still lands on PATH as `herdr-reshape`; only
+    # its target changes.
+    binaries:
+      - bin/herdr-reshape
+    # herdr is what loads the plugin, so it is not optional. Nothing else is
+    # needed: this plugin drives herdr's socket and nothing but.
+    dependencies:
+      - formula: herdr
+    # A cask cannot bind a key, and this one deliberately does not register the
+    # plugin either — unlike herdr-scratch's, whose post-install hook runs
+    # `link`. So both steps are spelled out here, and `link` is not a repair
+    # path: it is the step every install and upgrade needs, because nothing else
+    # points herdr at this build.
+    caveats: |
+      Bind the five actions in ~/.config/herdr/config.toml, one block each:
+
+        [[keys.command]]
+        key         = "prefix+="
+        type        = "plugin_action"
+        command     = "user.reshape.fit"
+        description = "best-fit the tab"
+
+      The other four action ids are user.reshape.move-left,
+      user.reshape.move-right, user.reshape.move-up and
+      user.reshape.move-down. Apply them with:
+
+        herdr server reload-config
+
+      Then register this build with herdr — after every install and
+      upgrade, since nothing else points herdr at it:
+
+        herdr-reshape link
+    hooks:
+      post:
+        # Homebrew quarantines whatever a cask downloads, and macOS refuses to
+        # run a quarantined binary from a developer it cannot identify — so
+        # without this the very command the caveats above tell the user to run
+        # is the one that will not launch. Only this copy is affected:
+        # `herdr-reshape link` copies the tree with plain reads and writes,
+        # which carry no extended attributes, so the build herdr runs comes out
+        # clean regardless.
+        #
+        # The `-h` probe is not defensive padding: xattr was a /usr/bin/python3
+        # script until recently, and on a machine without the Command Line Tools
+        # it fails rather than runs. goreleaser's own docs ship the guard for
+        # that reason — a cask that cannot strip the attribute should still
+        # install.
+        install: |
+          if system_command("/usr/bin/xattr", args: ["-h"]).exit_status == 0
+            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/bin/herdr-reshape"]
+          end

@@ -27,15 +27,13 @@ rumdl                 = "latest" # Markdown lint + format (config in .rumdl.toml
 go            = "latest"
 golangci-lint = "2.13.1"
 
-# Release engineering. There is no pipeline in the repo yet — these are the two
-# tools it will be built out of when there is: goreleaser to build and publish
-# the artifacts, svu to decide the next version from the last tag. Pinned ahead
-# of that so the toolchain matches herdr-scratch's, which is the twin this repo
-# is meant to stay interchangeable with.
+# Release engineering, driven from a laptop rather than CI: goreleaser builds
+# and publishes the artifacts from .goreleaser.yaml, svu decides the next
+# version from the last tag. docs/RELEASING.md is the procedure they run in.
 goreleaser = "latest"
 svu        = "3.4.1"  # `svu patch|minor|major` prints the next version
 
-# The GitHub client, pinned alongside the release tools it will be used with.
+# The GitHub client, pinned alongside the release tools it is used with.
 gh = "latest"
 
 # (Re)register git hooks whenever tools are installed or updated.

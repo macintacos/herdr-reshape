@@ -27,7 +27,47 @@ measured against 0.8.2, and the event behaviour has not been checked below it.
 Everything else is pinned in `mise.toml`, so [mise](https://mise.jdx.dev) is the only
 other thing you need on `PATH`.
 
+## Install
+
+```bash
+brew install --cask macintacos/tap/herdr-reshape
+herdr-reshape link
+herdr server reload-config
+```
+
+`herdr-reshape link` after **every** install and upgrade, and nothing else does it for
+you. herdr registers a plugin by the real directory holding its manifest, and for a cask
+that is a Caskroom path numbered by version which the next upgrade deletes — so `link`
+copies this build into a directory this plugin owns and registers that instead. Skipping
+it after an upgrade leaves herdr running the release before.
+
+Then bind the actions in `~/.config/herdr/config.toml` — the cask's caveats print the
+worked example — and apply them with `herdr server reload-config`.
+
+### On Linux
+
+Homebrew has no cask support on Linux, so take the prebuilt tarball instead. Every
+[release](https://github.com/macintacos/herdr-reshape/releases) ships `linux_amd64` and
+`linux_arm64` archives that are already a plugin root — `bin/herdr-reshape` beside the
+manifest — so nothing is compiled and Go is not needed.
+
+```bash
+mkdir -p ~/.local/opt/herdr-reshape
+tar -xzf herdr-reshape_0.1.0_linux_arm64.tar.gz -C ~/.local/opt/herdr-reshape
+herdr plugin link ~/.local/opt/herdr-reshape
+```
+
+`herdr plugin link` rather than `herdr-reshape link` here: the extracted directory is
+yours rather than a package manager's, so nothing renumbers it on upgrade and there is
+nothing for the copy to protect against. Replace the tarball in place to upgrade.
+
+The event hooks' behaviour was measured on macOS and has not been re-measured on Linux —
+see the note in [`herdr-plugin.toml`](herdr-plugin.toml). The actions have nothing
+OS-shaped in them.
+
 ## Build and link a local checkout
+
+The development path, and the one to use for a change you have not released.
 
 ```bash
 git clone https://github.com/macintacos/herdr-reshape.git
@@ -40,7 +80,8 @@ herdr plugin link "$PWD"
 herdr server reload-config
 ```
 
-`link` registers the directory where it stands rather than copying it, so put the checkout
+`herdr plugin link` — herdr's own subcommand, not this plugin's `herdr-reshape link` above
+— registers the directory where it stands rather than copying it, so put the checkout
 somewhere it can live. Check it took:
 
 ```bash
@@ -63,3 +104,5 @@ build leaves nothing registered rather than a half-working plugin.
 
 `hk` runs the formatters and linters on every commit and the tests on every push, so those
 tasks are the same checks the hooks apply — just runnable on demand.
+
+Cutting a release is [`docs/RELEASING.md`](docs/RELEASING.md).

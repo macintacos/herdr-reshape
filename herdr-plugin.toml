@@ -3,10 +3,14 @@ name              = "Reshape"
 version           = "0.1.0"
 min_herdr_version = "0.8.0"
 description       = "Move the focused pane, and best-fit a tab into an even grid"
-# macOS only because that is where the behaviour below was measured. Nothing
-# here is platform-specific — it drives herdr and nothing else — so Linux needs
-# a run of the same measurements rather than a code change.
-platforms = ["macos"]
+# Nothing here is platform-specific: this plugin drives herdr's socket and
+# nothing else, and every behaviour it depends on is herdr's rather than the
+# OS's. Linux is declared on that basis, which is worth saying plainly — the
+# event semantics documented below (which pane a hook names, when it fires
+# relative to the collapse) were measured on macOS against 0.8.2 and have not
+# been re-measured on Linux. Repeat them there before trusting the auto-fit
+# hooks; the actions have nothing OS-shaped in them to differ.
+platforms = ["macos", "linux"]
 
 # Compiled at install time. herdr runs build commands during a GitHub
 # `plugin install`, after confirmation and before it registers the plugin, so a

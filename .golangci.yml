@@ -36,11 +36,10 @@ linters:
       #              argv array with no shell between it and the process, so the
       #              worst an argument can be is one herdr rejects. What "taints"
       #              it is the user's own pane id and their own chord.
-      # The file rules below fire on nothing today — the layout herdr reports is
-      # the only state this plugin keeps, so it opens no files. They are carried
-      # anyway because the exclusion set is transcribed from herdr-scratch as a
-      # unit, and a log file arriving later should not also have to argue with
-      # the linter:
+      # The file rules below are what cmd/link.go's copy needs: it creates the
+      # plugin root and writes the manifest into it, both at the conventional
+      # modes, and every path it touches is computed from the environment rather
+      # than spelled as a literal:
       #   G301/G302/G306  directory and file modes — 0755/0644 is the convention
       #                   for the XDG dirs herdr also reads
       #   G304  file opened via a variable path — an XDG path is computed, never
