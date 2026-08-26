@@ -41,11 +41,29 @@ that is a Caskroom path numbered by version which the next upgrade deletes — s
 copies this build into a directory this plugin owns and registers that instead. Skipping
 it after an upgrade leaves herdr running the release before.
 
-The cask is macOS-only, as Homebrew casks are. The linux archives on each release are for
-`herdr plugin install` and by-hand extraction.
-
 Then bind the actions in `~/.config/herdr/config.toml` — the cask's caveats print the
 worked example — and apply them with `herdr server reload-config`.
+
+### On Linux
+
+Homebrew has no cask support on Linux, so take the prebuilt tarball instead. Every
+[release](https://github.com/macintacos/herdr-reshape/releases) ships `linux_amd64` and
+`linux_arm64` archives that are already a plugin root — `bin/herdr-reshape` beside the
+manifest — so nothing is compiled and Go is not needed.
+
+```bash
+mkdir -p ~/.local/opt/herdr-reshape
+tar -xzf herdr-reshape_0.1.0_linux_arm64.tar.gz -C ~/.local/opt/herdr-reshape
+herdr plugin link ~/.local/opt/herdr-reshape
+```
+
+`herdr plugin link` rather than `herdr-reshape link` here: the extracted directory is
+yours rather than a package manager's, so nothing renumbers it on upgrade and there is
+nothing for the copy to protect against. Replace the tarball in place to upgrade.
+
+The event hooks' behaviour was measured on macOS and has not been re-measured on Linux —
+see the note in [`herdr-plugin.toml`](herdr-plugin.toml). The actions have nothing
+OS-shaped in them.
 
 ## Build and link a local checkout
 

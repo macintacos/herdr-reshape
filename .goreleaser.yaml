@@ -55,9 +55,12 @@ homebrew_casks:
   # someone else's toolchain rebuilt.
   #
   # Casks are macOS-only — Homebrew on Linux refuses to install one at all — so
-  # the linux archives above are for `herdr plugin install` and by-hand
-  # extraction. There is no brew path on Linux, and no arrangement of this block
-  # creates one.
+  # the linux archives above are what Linux installs from: extracted by hand and
+  # registered with `herdr plugin link`, which works because an archive is
+  # already a plugin root. Not `herdr plugin install`, which takes a GitHub
+  # owner/repo and compiles the manifest's [[build]] from source rather than
+  # consuming a release artifact. There is no brew path on Linux, and no
+  # arrangement of this block creates one.
   - repository:
       owner: macintacos
       name: homebrew-tap
