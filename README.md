@@ -6,28 +6,31 @@ the tab up into an even grid.
 herdr can resize a pane, split one, and send one to another tab. It has no word for
 *re-orienting* a pane against the one beside it, and no word for "make these even" — a new
 pane always lands on a halved split, so three panes come out 50/25/25 rather than in
-thirds. This adds both, and runs the second one as panes come and go, on tabs you have not
-resized yourself.
+thirds. This plugin adds both.
 
-**Move** re-orients the focused pane against its **sibling** in the split tree, which is
-not the same as travelling to whatever pane lies in that direction. With `A | (B / C)` and
-B focused, moving right puts B beside C — travelling right would reach nothing, and left
-would reach A. Whatever the pane is running keeps running across the move.
+## What it does
 
-**Fit** works on rows and columns together, not just one axis: it projects every pane edge
-onto shared grid lines and puts each divider on the line an even grid would want, so a tab
-of nested splits comes out even in both directions and fitting an already-fitted tab does
-nothing.
+**Move** re-orients the focused pane against its **sibling** in the split tree.
 
-## Requirements
+That is not the same as travelling to whatever pane lies in that direction. Take
+`A | (B / C)` — A beside a column of B stacked over C — with B focused. Moving right puts
+B to the right of C; *travelling* right would reach nothing, and left would reach A.
 
-herdr 0.8.0 or newer — that is the manifest's floor. Everything described here was
-measured against 0.8.2, and the event behaviour has not been checked below it.
+Three outcomes, then. The split rotates onto the axis you asked for, as it does above. Or
+the sibling is already on that axis, and the two swap places. Or the pane is already on
+that side, and nothing moves — herdr says so rather than leaving you guessing. Whatever
+the pane is running keeps running across any of it.
 
-Everything else is pinned in `mise.toml`, so [mise](https://mise.jdx.dev) is the only
-other thing you need on `PATH`.
+**Fit** squares a tab's panes into an even grid, rows and columns together, so nested
+splits come out even in both directions.
+
+Fit also runs on its own as panes come and go — but only on a tab that is still even, so a
+tab you have sized yourself is left alone. Running `fit` there is both how you put it back
+on the grid and how you re-arm the automatic one.
 
 ## Install
+
+Needs herdr 0.8.0 or newer. Linux and macOS take the same three commands.
 
 ```bash
 brew install macintacos/tap/herdr-reshape
@@ -35,70 +38,89 @@ herdr plugin link "$(brew --prefix)/share/herdr-reshape"
 herdr server reload-config
 ```
 
-**Coming from the cask?** Remove it first — both put `herdr-reshape` on `PATH`, and
-`brew upgrade` will not convert one into the other:
-
-```bash
-brew uninstall --zap --cask herdr-reshape
-herdr plugin unlink user.reshape
-```
-
-The `herdr plugin link` is **one-time**. herdr registers a plugin by the real directory
-holding its manifest, so handing it a path numbered by version would register a directory
-the next upgrade deletes. The formula's `post_install` sidesteps that: it refreshes
-`$(brew --prefix)/share/herdr-reshape` on every install and every upgrade, and that path
-never changes. From then on `brew upgrade` is the whole procedure — there is no `link`
-step after it.
-
-Then bind the actions in `~/.config/herdr/config.toml` — the formula's caveats print the
-worked example — and apply them with `herdr server reload-config`.
-
-### On Linux
-
-The same commands. A formula installs on both platforms — which is the whole reason this
-is not a cask — so there is no tarball to extract and nothing to compile.
-
-The event hooks' behaviour was measured on macOS and has not been re-measured on Linux —
-see the note in [`herdr-plugin.toml`](herdr-plugin.toml). The actions have nothing
-OS-shaped in them.
-
-## Build and link a local checkout
-
-The development path, and the one to use for a change you have not released.
-
-```bash
-git clone https://github.com/macintacos/herdr-reshape.git
-cd herdr-reshape
-mise trust       # a fresh clone's mise.toml is untrusted; setup exits 1 without this
-mise run setup   # install the pinned tools, register the git hooks
-mise run build   # `herdr plugin link` does NOT build — this is the step it skips
-
-herdr plugin link "$PWD"
-herdr server reload-config
-```
-
-`herdr plugin link` is herdr's own subcommand: it registers the directory where it stands
-rather than copying it, so put the checkout somewhere it can live. Check it took:
+`herdr plugin link` is one-time. That path is refreshed on every upgrade, so from here on
+`brew upgrade` is the whole procedure. Check it took — `user.reshape` is the id herdr
+knows this plugin by:
 
 ```bash
 herdr plugin action list --plugin user.reshape   # five actions
 ```
 
-A `herdr plugin install` from GitHub needs none of this: the manifest's `[[build]]` block
-compiles the binary during the install, before herdr registers the plugin, so a failed
-build leaves nothing registered rather than a half-working plugin.
+## Configure
 
-## Working on it
+Nothing is bound out of the box. These are the five actions and the bindings worth giving
+them:
 
-| Task                | What it does                                    |
-| ------------------- | ----------------------------------------------- |
-| `mise run build`    | build the binary into `bin/herdr-reshape`       |
-| `mise run format`   | rewrite every file into canonical form          |
-| `mise run lint`     | check formatting and lint rules, read-only      |
-| `mise run test`     | run the test suite                              |
-| `mise run preflight`| lint + test, the gate before pushing            |
+| Action                    | Binding        | Vim alternative  | What it does                    |
+| ------------------------- | -------------- | ---------------- | ------------------------------- |
+| `user.reshape.move-left`  | `prefix+left`  | `prefix+shift+h` | Move the pane left              |
+| `user.reshape.move-down`  | `prefix+down`  | `prefix+shift+j` | Move the pane down              |
+| `user.reshape.move-up`    | `prefix+up`    | `prefix+shift+k` | Move the pane up                |
+| `user.reshape.move-right` | `prefix+right` | `prefix+shift+l` | Move the pane right             |
+| `user.reshape.fit`        | `prefix+=`     | —                | Square this tab into a grid     |
 
-`hk` runs the formatters and linters on every commit and the tests on every push, so those
-tasks are the same checks the hooks apply — just runnable on demand.
+Each binding is one `[[keys.command]]` block in `~/.config/herdr/config.toml`. The five
+arrow bindings above, ready to paste:
 
-Cutting a release is [`docs/RELEASING.md`](docs/RELEASING.md).
+```toml
+[[keys.command]]
+key         = "prefix+left"
+type        = "plugin_action"
+command     = "user.reshape.move-left"
+description = "move the pane left"
+
+[[keys.command]]
+key         = "prefix+down"
+type        = "plugin_action"
+command     = "user.reshape.move-down"
+description = "move the pane down"
+
+[[keys.command]]
+key         = "prefix+up"
+type        = "plugin_action"
+command     = "user.reshape.move-up"
+description = "move the pane up"
+
+[[keys.command]]
+key         = "prefix+right"
+type        = "plugin_action"
+command     = "user.reshape.move-right"
+description = "move the pane right"
+
+[[keys.command]]
+key         = "prefix+="
+type        = "plugin_action"
+command     = "user.reshape.fit"
+description = "best-fit the tab"
+```
+
+Then apply them:
+
+```bash
+herdr server reload-config
+```
+
+For the vim alternative, add a second block per action — same `command`, different `key`.
+Binding the moves both ways at once is harmless. For fit, `=` is the key tmux uses for
+`select-layout`; write it as the literal character, as herdr rejects both `equal` and
+`equals`.
+
+## Uninstall
+
+Three steps. `brew uninstall` takes back only what it installed into the keg: the plugin
+root at `share/herdr-reshape` is written by the formula's `post_install`, so brew does not
+track it, and herdr's registration is its own to forget.
+
+```bash
+brew uninstall herdr-reshape
+herdr plugin unlink user.reshape
+rm -rf "$(brew --prefix)/share/herdr-reshape"
+```
+
+Delete the `[[keys.command]]` blocks from `~/.config/herdr/config.toml` too — nothing else
+will.
+
+## Contributing
+
+Building and linking a local checkout is [`CONTRIBUTING.md`](CONTRIBUTING.md); cutting a
+release is [`docs/RELEASING.md`](docs/RELEASING.md).
