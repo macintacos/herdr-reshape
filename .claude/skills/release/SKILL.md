@@ -75,9 +75,9 @@ git fetch --prune --prune-tags origin && git rev-parse HEAD origin/trunk   # ide
   version.
 - **`mise run goreleaser-check` rather than `goreleaser check`** → the config publishes a
   formula, which needs the deprecated `brews` block, and `check` exits non-zero on any
-  deprecation with no flag to tolerate one. The task passes on that single message and
-  fails on everything else, so a real config error still stops the release here. Do not
-  "fix" a failure by reaching for `goreleaser check` directly.
+  deprecation with no flag to tolerate one. The task tolerates `brews` and nothing else —
+  a second deprecated property, or any real config error, still stops the release here. Do
+  not "fix" a failure by reaching for `goreleaser check` directly.
 - **Not on `trunk`, dirty, or ahead of / behind `origin/trunk`** → stop. A release is cut
   from the default branch's tip; a tag on anything else points at a tree nobody reviewed.
   *Dirty* means what goreleaser means by it: `git status --porcelain` empty,
@@ -269,12 +269,17 @@ the repo like a version that shipped.
 
 ## After the release
 
-The checks the formula's `test do` cannot make for itself are in
-[docs/RELEASING.md](../../../docs/RELEASING.md) — `brew style` and `brew audit --strict`
-on the rendered formula, `brew install`, the upgrade cycle with **no `link` step**, and
-driving all five actions and all three events from the installed build. Point the user at
-it rather than restating it here; two copies of a checklist drift, and that one is what
-somebody reads without an agent in the room.
+The install checks are in [docs/RELEASING.md](../../../docs/RELEASING.md) —
+`brew install`, `brew test`, the upgrade cycle with **no `link` step**, and driving all
+five actions and all three events from the installed build. Point the user at it rather
+than restating it here; two copies of a checklist drift, and that one is what somebody
+reads without an agent in the room.
+
+The formula's own lint — `brew style` and `brew audit --strict` on the rendered file —
+belongs *before* the tag, not here; it is part of that file's **Rehearse first** block. A
+formula that fails `audit --strict` after the tag is pushed is a public tag with a broken
+tap commit behind it, which is the class of failure the Preconditions exist to keep off
+the far side of § The gate.
 
 Until the cask cutover has happened, that file's § The one-time cask cutover is also part
 of the first formula release — the tap still carries `Casks/herdr-reshape.rb`, and
@@ -290,7 +295,8 @@ removing it is a hand-edit nothing automates.
 - **Fixing the tap.** Editing `macintacos/homebrew-tap` by hand is what the formula config
   exists to end. Two exceptions, both named above: reverting a formula commit for a
   version being abandoned rather than retried (§ Recovery), and the one-time deletion of
-  `Casks/herdr-reshape.rb` at the first formula release (§ After the release).
+  `Casks/herdr-reshape.rb` at the first formula release
+  ([docs/RELEASING.md](../../../docs/RELEASING.md) § The one-time cask cutover).
 
 ## Common Mistakes
 

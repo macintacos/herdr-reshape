@@ -52,30 +52,34 @@ committed; `$(mise exec -- gh auth token)` is enough when `gh` is already authen
 
 **Rehearse first.** `mise exec -- goreleaser release --snapshot --clean --skip=publish`
 builds all four targets into `dist/` and renders the formula to
-`dist/homebrew/herdr-reshape.rb` without touching GitHub, and `mise run goreleaser-check`
-validates the config on its own. Use the task rather than `goreleaser check` directly —
-`brews` is deprecated, so `check` alone exits non-zero on a config that is otherwise fine,
-and the task is what tolerates exactly that one message.
+`dist/homebrew/Formula/herdr-reshape.rb` — the same `Formula/` path the tap receives —
+without touching GitHub, and `mise run goreleaser-check` validates the config on its own.
+Use the task rather than `goreleaser check` directly: `brews` is deprecated, so `check`
+alone exits non-zero on a config that is otherwise fine, and the task is what tolerates
+that one deprecation and nothing else.
 
 The rendered formula is worth a look before it is public:
 
 ```sh
 brew tap-new local/rehearsal --no-git
-cp dist/homebrew/herdr-reshape.rb "$(brew --repository)/Library/Taps/local/homebrew-rehearsal/Formula/"
+cp dist/homebrew/Formula/herdr-reshape.rb "$(brew --repository)/Library/Taps/local/homebrew-rehearsal/Formula/"
 brew style local/rehearsal/herdr-reshape        # exit 0
 brew audit --strict local/rehearsal/herdr-reshape   # exit 0
 brew untap local/rehearsal
 ```
 
-Both must be clean. `audit --strict` is the one that catches the mistakes that matter here
-— it is what rejected `rm_rf` in `post_install` and would reject a `livecheck` block in
-the position goreleaser puts `custom_block`.
+Both must be clean. `brew style` is where the two cops that matter here land — it is what
+rejects `rm_rf` in `post_install`, and a `livecheck` block in the position goreleaser puts
+`custom_block`. `audit --strict` runs those same cops plus the formula-level rules, which
+is why both are listed rather than only one.
 
-**Then check by hand what the `test do` block cannot.** The formula now asserts the
-version itself, so what is left is the upgrade cycle and a real herdr session:
+**Then the install checks.** Nothing runs the formula's `test do` block on a tag — there
+is no CI, and `brew test` is a separate command — so run it explicitly along with the
+rest:
 
 ```sh
 brew install macintacos/tap/herdr-reshape
+brew test macintacos/tap/herdr-reshape   # runs the formula's own version assertion
 herdr-reshape --version   # the tag without its v — "dev" means the ldflags stamp broke
 "$(brew --prefix)"/share/herdr-reshape/bin/herdr-reshape --version   # the same version
 herdr plugin link "$(brew --prefix)/share/herdr-reshape"
@@ -108,10 +112,7 @@ there is something to replace it with — so the order is fixed:
 1. Cut the first release from this config. goreleaser commits `Formula/herdr-reshape.rb`
    to the tap; `Casks/herdr-reshape.rb` is still sitting there, now pointing at an older
    release.
-2. Delete `Casks/herdr-reshape.rb` from `macintacos/homebrew-tap`. This is the one
-   deliberate hand-edit of the tap, and the exception the
-   [`/release` skill](../.claude/skills/release/SKILL.md)'s "When NOT to Use" allows for.
-3. Tell existing macOS users to remove the cask before installing the formula. The two
+2. Tell existing macOS users to remove the cask before installing the formula. The two
    cannot coexist: both put `herdr-reshape` on `PATH`.
 
    ```sh
@@ -120,5 +121,15 @@ there is something to replace it with — so the order is fixed:
    brew install macintacos/tap/herdr-reshape
    herdr plugin link "$(brew --prefix)/share/herdr-reshape"
    ```
+
+3. Delete `Casks/herdr-reshape.rb` from `macintacos/homebrew-tap`. This is one of the two
+   deliberate hand-edits of the tap the
+   [`/release` skill](../.claude/skills/release/SKILL.md)'s "When NOT to Use" allows for.
+
+Announcing before deleting is the point of that order: between the delete and the
+migration, a cask user running `brew upgrade` hits a cask the tap no longer has, and the
+`--zap` in step 2 then falls back to the cached definition under
+`$(brew --caskroom)/herdr-reshape/.metadata` rather than the tap. Leaving the cask in
+place until people have moved costs nothing.
 
 Delete this section once the cutover has happened.

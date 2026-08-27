@@ -21,10 +21,13 @@ func newLinkCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "link",
 		Short: "Register this build with herdr, and install its manifest",
-		Long: `For local builds and installs that did not come from Homebrew. A
-Homebrew install refreshes its own copy in post_install, so there is nothing to
-run after one — see the formula's caveats for the one-time registration it does
-need.
+		Long: `For installs that did not come from Homebrew.
+
+A Homebrew install refreshes its own copy in post_install, so there is nothing
+to run after one — the formula's caveats print the one-time registration it does
+need. Do not run this on a Homebrew install: it registers a second copy under
+~/.local/share that no upgrade refreshes, which is the stale-plugin failure the
+formula exists to avoid.
 
 herdr records a plugin by resolving its manifest and keeping the real directory
 that holds it. Point herdr straight at a package manager's prefix and it records

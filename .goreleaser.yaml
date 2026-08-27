@@ -50,11 +50,10 @@ archives:
 brews:
   # A formula rather than a cask, because a cask is macOS-only — Homebrew on
   # Linux refuses to install one at all — and nothing in this plugin is
-  # OS-shaped. One formula is what gives Linux a brew path and ends the
-  # untar-by-hand recipe the README used to carry. Its sha256 per architecture
-  # is read from the checksums.txt goreleaser generates by default, so it covers
-  # the binary the user actually runs rather than source someone else's
-  # toolchain rebuilt.
+  # OS-shaped. One formula is what gives Linux a brew path. Its sha256 per
+  # architecture is read from the checksums.txt goreleaser generates by default,
+  # so it covers the binary the user actually runs rather than source someone
+  # else's toolchain rebuilt.
   #
   # Three measured facts hold this shape up, and each one closes a door:
   #
@@ -62,9 +61,12 @@ brews:
   #     what lets the copy below stand in for the link step an upgrade used to
   #     need. Confirmed on both platforms before this block was written.
   #   - post_install gets a throwaway $HOME on macOS — the install sandbox calls
-  #     deny_read_home — so it can never register anything with herdr. It reads
-  #     a registry that does not exist and writes one that is deleted moments
-  #     later. Registration is therefore a one-time user step, in the caveats.
+  #     deny_read_home — so it can never register anything with herdr there. It
+  #     reads a registry that does not exist and writes one that is deleted
+  #     moments later. Linux sandboxes differently and does hand it the real
+  #     $HOME, so registration could in principle be automated on that platform
+  #     alone; it deliberately is not, because one install story beats two.
+  #     Either way registration is a one-time user step, in the caveats.
   #   - herdr records a plugin by the *resolved* directory holding its manifest.
   #     Point it at opt/herdr-reshape and it records the Cellar path numbered by
   #     version, which the next upgrade deletes — the exact failure this whole
@@ -78,6 +80,12 @@ brews:
   - repository:
       owner: macintacos
       name: homebrew-tap
+    # Spelled out because `brews` has no default for it, unlike `homebrew_casks`
+    # which defaults to Casks. Left unset the formula is committed to the tap
+    # root, where `Tap#formula_dir` still finds it only until something creates
+    # a Formula/ directory alongside it — after which `brew install` fails with
+    # "No available formula" and nothing here explains why.
+    directory: Formula
     homepage: https://github.com/macintacos/herdr-reshape
     description: Move the focused herdr pane, and best-fit a tab into an even grid
     license: MIT
@@ -93,9 +101,14 @@ brews:
     # bin/ beside the manifest — and this keeps it one: cmd/link.go's buildRoot
     # resolves os.Executable through EvalSymlinks, so the binary invoked from
     # PATH as `herdr-reshape` still reports libexec as its build root.
+    #
+    # LICENSE lands in the keg rather than libexec: MIT requires the notice
+    # travel with the binary, and libexec holds exactly the plugin root that
+    # post_install copies — bin/ plus the manifest, which is all herdr reads.
     install: |
       libexec.install "bin", "herdr-plugin.toml"
       bin.install_symlink libexec/"bin/herdr-reshape"
+      prefix.install "LICENSE"
     # The whole answer to the upgrade constraint: a plugin root at a path no
     # release renumbers, refreshed on every install and every upgrade. herdr is
     # registered against it once and stays pointed there while the contents
@@ -113,22 +126,23 @@ brews:
       rm_r root if root.exist?
       root.mkpath
       cp_r [libexec/"bin", libexec/"herdr-plugin.toml"], root
-    # The check docs/RELEASING.md used to make by hand, because a cask has no
-    # `test do` to make it: "dev" here means the ldflags stamp broke and the
-    # release is misreporting its version to the one thing that reads it.
+    # `brew audit --strict` refuses a formula with no test block, and this is
+    # the assertion worth putting in it: "dev" means the ldflags stamp broke and
+    # the release is misreporting its version to the one thing that reads it.
+    # Nothing runs on a tag — there is no CI and `brew test` is a separate
+    # command — so docs/RELEASING.md runs it by hand once per release.
     test: |
       assert_match version.to_s, shell_output("#{bin}/herdr-reshape --version")
-    # No `custom_block` holding a `livecheck do skip` — goreleaser emits one
-    # into a cask by itself, but for a formula it can only place custom_block
-    # after the platform blocks, where `brew audit --strict` rejects it:
-    # livecheck must precede depends_on. The audit is the gate docs/RELEASING.md
-    # runs, so it wins over the parity.
+    # No `custom_block` holding a `livecheck do skip` — goreleaser can only
+    # place custom_block after the platform blocks, where `brew audit --strict`
+    # rejects it: livecheck must precede depends_on. The audit is a gate
+    # docs/RELEASING.md runs, so it wins.
     #
     # A formula cannot bind a key, and it deliberately does not register the
     # plugin either — post_install cannot reach the real herdr registry (see the
-    # header). So both steps are spelled out here. Unlike the cask this replaces,
-    # the registration is a one-time step: upgrades rewrite what is behind the
-    # path herdr recorded, so there is nothing to re-run.
+    # header). So both steps are spelled out here. The registration is one-time:
+    # an upgrade rewrites what sits behind the path herdr recorded, so there is
+    # nothing to re-run.
     caveats: |
       Bind the five actions in ~/.config/herdr/config.toml, one block each:
 

@@ -35,6 +35,14 @@ herdr plugin link "$(brew --prefix)/share/herdr-reshape"
 herdr server reload-config
 ```
 
+**Coming from the cask?** Remove it first — both put `herdr-reshape` on `PATH`, and
+`brew upgrade` will not convert one into the other:
+
+```bash
+brew uninstall --zap --cask herdr-reshape
+herdr plugin unlink user.reshape
+```
+
 The `herdr plugin link` is **one-time**. herdr registers a plugin by the real directory
 holding its manifest, so handing it a path numbered by version would register a directory
 the next upgrade deletes. The formula's `post_install` sidesteps that: it refreshes
@@ -69,9 +77,8 @@ herdr plugin link "$PWD"
 herdr server reload-config
 ```
 
-`herdr plugin link` — herdr's own subcommand, not this plugin's `herdr-reshape link` above
-— registers the directory where it stands rather than copying it, so put the checkout
-somewhere it can live. Check it took:
+`herdr plugin link` is herdr's own subcommand: it registers the directory where it stands
+rather than copying it, so put the checkout somewhere it can live. Check it took:
 
 ```bash
 herdr plugin action list --plugin user.reshape   # five actions
