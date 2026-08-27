@@ -21,13 +21,14 @@ func newLinkCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "link",
 		Short: "Register this build with herdr, and install its manifest",
-		Long: `A Homebrew cask install and upgrade leave this for you to run. Run it
-by hand after every install and upgrade, and after any install that did not come
-from the cask.
+		Long: `For local builds and installs that did not come from Homebrew. A
+Homebrew install refreshes its own copy in post_install, so there is nothing to
+run after one — see the formula's caveats for the one-time registration it does
+need.
 
 herdr records a plugin by resolving its manifest and keeping the real directory
 that holds it. Point herdr straight at a package manager's prefix and it records
-a directory numbered by version — Caskroom/herdr-reshape/<version> for a cask —
+a directory numbered by version — Cellar/herdr-reshape/<version> for a formula —
 which the next upgrade deletes, taking the registration with it.
 
 This builds a directory herdr can keep instead, and copies this release into it:

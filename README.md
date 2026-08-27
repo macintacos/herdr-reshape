@@ -30,36 +30,25 @@ other thing you need on `PATH`.
 ## Install
 
 ```bash
-brew install --cask macintacos/tap/herdr-reshape
-herdr-reshape link
+brew install macintacos/tap/herdr-reshape
+herdr plugin link "$(brew --prefix)/share/herdr-reshape"
 herdr server reload-config
 ```
 
-`herdr-reshape link` after **every** install and upgrade, and nothing else does it for
-you. herdr registers a plugin by the real directory holding its manifest, and for a cask
-that is a Caskroom path numbered by version which the next upgrade deletes — so `link`
-copies this build into a directory this plugin owns and registers that instead. Skipping
-it after an upgrade leaves herdr running the release before.
+The `herdr plugin link` is **one-time**. herdr registers a plugin by the real directory
+holding its manifest, so handing it a path numbered by version would register a directory
+the next upgrade deletes. The formula's `post_install` sidesteps that: it refreshes
+`$(brew --prefix)/share/herdr-reshape` on every install and every upgrade, and that path
+never changes. From then on `brew upgrade` is the whole procedure — there is no `link`
+step after it.
 
-Then bind the actions in `~/.config/herdr/config.toml` — the cask's caveats print the
+Then bind the actions in `~/.config/herdr/config.toml` — the formula's caveats print the
 worked example — and apply them with `herdr server reload-config`.
 
 ### On Linux
 
-Homebrew has no cask support on Linux, so take the prebuilt tarball instead. Every
-[release](https://github.com/macintacos/herdr-reshape/releases) ships `linux_amd64` and
-`linux_arm64` archives that are already a plugin root — `bin/herdr-reshape` beside the
-manifest — so nothing is compiled and Go is not needed.
-
-```bash
-mkdir -p ~/.local/opt/herdr-reshape
-tar -xzf herdr-reshape_0.1.0_linux_arm64.tar.gz -C ~/.local/opt/herdr-reshape
-herdr plugin link ~/.local/opt/herdr-reshape
-```
-
-`herdr plugin link` rather than `herdr-reshape link` here: the extracted directory is
-yours rather than a package manager's, so nothing renumbers it on upgrade and there is
-nothing for the copy to protect against. Replace the tarball in place to upgrade.
+The same commands. A formula installs on both platforms — which is the whole reason this
+is not a cask — so there is no tarball to extract and nothing to compile.
 
 The event hooks' behaviour was measured on macOS and has not been re-measured on Linux —
 see the note in [`herdr-plugin.toml`](herdr-plugin.toml). The actions have nothing
