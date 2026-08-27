@@ -1,0 +1,49 @@
+#!/usr/bin/env bash
+#MISE description="Validate .goreleaser.yaml, tolerating the brews deprecation"
+
+set -euo pipefail
+
+# What hk's Release(Lint) step and /release's preconditions run instead of
+# `goreleaser check` directly.
+#
+# The config publishes a Homebrew *formula*, which needs `brews`. goreleaser
+# deprecated `brews` in 2.16 in favour of `homebrew_casks` — macOS-only, so no
+# replacement for a formula that has to serve Linux too — and `check` exits
+# non-zero on any deprecated property with no flag to tolerate one. Left alone
+# the gate would be red forever, which is the same as having no gate. Only
+# `check` is this strict: `goreleaser release` warns and publishes, so nothing
+# about releasing is affected.
+#
+# Deprecated options are removed only on majors, so this expires at goreleaser
+# v3, where `brews` goes away with no formula path behind it. That is a rethink
+# of how this project ships, not a patch to this file.
+#
+# Everything that is not that one deprecation still fails, which is the whole
+# point of the step: .goreleaser.yaml's only other reader runs on release day,
+# after the tag is public.
+
+files=("$@")
+if [ ${#files[@]} -eq 0 ]; then
+	files=(.goreleaser.yaml)
+fi
+
+if output=$(goreleaser check "${files[@]}" 2>&1); then
+	printf '%s\n' "$output"
+	exit 0
+fi
+
+# goreleaser reports one `error=` line per file it rejected, plus a `check
+# failed` line counting them. The count is noise; the per-file lines are the
+# verdict. A config that does not parse at all fails as `command failed` with a
+# bare `error=` instead, which lands here as a line that is not the tolerated
+# one — so it fails, as it should.
+problems=$(grep 'error=' <<<"$output" | grep -v 'check failed' || true)
+
+if [ -n "$problems" ] && ! grep -qv 'uses deprecated properties' <<<"$problems"; then
+	printf '%s\n' "$output"
+	echo "goreleaser-check: the only issue is the brews deprecation; tolerated"
+	exit 0
+fi
+
+printf '%s\n' "$output" >&2
+exit 1

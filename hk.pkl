@@ -63,9 +63,14 @@ local linters = new Mapping<String, Step> {
   // parses .goreleaser.yaml at the step that uploads, which is after the tag is
   // pushed and public. `check` is a static parse of that same file — no network,
   // no build — so a typo fails at the commit that introduced it instead.
-  ["Release(Lint)     [[goreleaser check]]"] = new Step {
+  //
+  // Through the task rather than `goreleaser check` directly: publishing a
+  // formula needs `brews`, which goreleaser has deprecated, and `check` exits
+  // non-zero on a deprecated property with no flag to tolerate one. The task
+  // tolerates that one message and fails on everything else.
+  ["Release(Lint)     [[goreleaser-check]]"] = new Step {
     glob = ".goreleaser.yaml"
-    check = "goreleaser check {{ files }}"
+    check = "./.mise/tasks/goreleaser-check {{ files }}"
   }
 }
 
