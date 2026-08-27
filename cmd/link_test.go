@@ -152,14 +152,15 @@ func TestInstallBuildRefusesToInstallOverItself(t *testing.T) {
 }
 
 func TestInstallBuildSurvivesTheStagingDirectoryBeingReplaced(t *testing.T) {
-	// The upgrade this command exists to withstand. A cask stages at
-	// Caskroom/<token>/<version> and Homebrew deletes that directory on
-	// upgrade, so anything the plugin root still points into goes with it.
-	// Owning the copy is what makes the root independent of the staging path.
-	caskroom := filepath.Join(t.TempDir(), "Caskroom", "herdr-reshape")
+	// The upgrade this command exists to withstand. A package manager stages at
+	// a path numbered by version — Cellar/<name>/<version> for Homebrew — and
+	// deletes that directory on upgrade, so anything the plugin root still
+	// points into goes with it. Owning the copy is what makes the root
+	// independent of the staging path.
+	cellar := filepath.Join(t.TempDir(), "Cellar", "herdr-reshape")
 	root := filepath.Join(t.TempDir(), "herdr-reshape")
 
-	staged := filepath.Join(caskroom, "0.1.0")
+	staged := filepath.Join(cellar, "0.1.0")
 	stageBuild(t, staged, "0.1.0")
 	if err := installBuild(staged, root); err != nil {
 		t.Fatal(err)
@@ -168,7 +169,7 @@ func TestInstallBuildSurvivesTheStagingDirectoryBeingReplaced(t *testing.T) {
 	if err := os.RemoveAll(staged); err != nil {
 		t.Fatal(err)
 	}
-	stageBuild(t, filepath.Join(caskroom, "0.2.0"), "0.2.0")
+	stageBuild(t, filepath.Join(cellar, "0.2.0"), "0.2.0")
 
 	for _, entry := range []string{filepath.Join("bin", "herdr-reshape"), "herdr-plugin.toml"} {
 		if got, _ := readInstalled(t, filepath.Join(root, entry)); got != "0.1.0" {
@@ -178,7 +179,7 @@ func TestInstallBuildSurvivesTheStagingDirectoryBeingReplaced(t *testing.T) {
 
 	// And the re-link picks the new release up, which is what makes the copy a
 	// snapshot rather than a one-time freeze.
-	if err := installBuild(filepath.Join(caskroom, "0.2.0"), root); err != nil {
+	if err := installBuild(filepath.Join(cellar, "0.2.0"), root); err != nil {
 		t.Fatal(err)
 	}
 	if got, _ := readInstalled(t, filepath.Join(root, "bin", "herdr-reshape")); got != "0.2.0" {

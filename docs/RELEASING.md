@@ -2,7 +2,7 @@
 
 By hand, from a laptop — there is no CI. [goreleaser](https://goreleaser.com) builds
 darwin and linux binaries for both architectures, publishes the GitHub release with
-checksums and notes, and commits the cask to
+checksums and notes, and commits the formula to
 [macintacos/homebrew-tap](https://github.com/macintacos/homebrew-tap). Its config is
 [`.goreleaser.yaml`](../.goreleaser.yaml); goreleaser itself is pinned in
 [`mise.toml`](../mise.toml).
@@ -45,38 +45,56 @@ thing that looks. `mise run version-check 0.1.0` asks the same question without 
 anything.
 
 **The token** needs contents write on *both* repositories — `macintacos/herdr-reshape` to
-create the release, `macintacos/homebrew-tap` to commit the cask. A classic PAT with
+create the release, `macintacos/homebrew-tap` to commit the formula. A classic PAT with
 `repo` scope covers it, as does a fine-grained token scoped to the two. goreleaser reads
 `GITHUB_TOKEN`, so it lives in the environment for exactly one command and is never
 committed; `$(mise exec -- gh auth token)` is enough when `gh` is already authenticated.
 
 **Rehearse first.** `mise exec -- goreleaser release --snapshot --clean --skip=publish`
-builds all four targets into `dist/` and renders the cask to
-`dist/homebrew/Casks/herdr-reshape.rb` without touching GitHub, and
-`mise exec -- goreleaser check` validates the config on its own.
+builds all four targets into `dist/` and renders the formula to
+`dist/homebrew/Formula/herdr-reshape.rb` — the same `Formula/` path the tap receives —
+without touching GitHub, and `mise run goreleaser-check` validates the config on its own.
+Use the task rather than `goreleaser check` directly: `brews` is deprecated, so `check`
+alone exits non-zero on a config that is otherwise fine, and the task is what tolerates
+that one deprecation and nothing else.
 
-**Then check by hand what a cask cannot check for itself.** A formula has `test do`; a
-cask has no equivalent, so these are yours:
+The rendered formula is worth a look before it is public:
 
 ```sh
-brew install --cask macintacos/tap/herdr-reshape
-herdr-reshape --version   # the tag without its v — "dev" means the ldflags stamp broke
-herdr-reshape link        # registers the build; nothing else does
-"$HOME"/.local/share/herdr-reshape/bin/herdr-reshape --version
+brew tap-new local/rehearsal --no-git
+cp dist/homebrew/Formula/herdr-reshape.rb "$(brew --repository)/Library/Taps/local/homebrew-rehearsal/Formula/"
+brew style local/rehearsal/herdr-reshape        # exit 0
+brew audit --strict local/rehearsal/herdr-reshape   # exit 0
+brew untap local/rehearsal
 ```
 
-The two versions agreeing is the check, and here it is `link` that put the second one
-there — this cask has no post-install hook that registers for you, which is why the
-command is run explicitly above. `$HOME` is spelled out rather than `${XDG_DATA_HOME:-…}`
-because a shell with `XDG_DATA_HOME` set writes somewhere else entirely; use whichever
-your environment actually names. A disagreement means `link` did not install what you just
-downloaded, and a `stat .../bin` error in its output means the archive layout regressed.
+Both must be clean. `brew style` is where the two cops that matter here land — it is what
+rejects `rm_rf` in `post_install`, and a `livecheck` block in the position goreleaser puts
+`custom_block`. `audit --strict` runs those same cops plus the formula-level rules, which
+is why both are listed rather than only one.
+
+**Then the install checks.** Nothing runs the formula's `test do` block on a tag — there
+is no CI, and `brew test` is a separate command — so run it explicitly along with the
+rest:
+
+```sh
+brew install macintacos/tap/herdr-reshape
+brew test macintacos/tap/herdr-reshape   # runs the formula's own version assertion
+herdr-reshape --version   # the tag without its v — "dev" means the ldflags stamp broke
+"$(brew --prefix)"/share/herdr-reshape/bin/herdr-reshape --version   # the same version
+herdr plugin link "$(brew --prefix)/share/herdr-reshape"
+```
+
+The two versions agreeing is the check, and here it is `post_install` that put the second
+one there rather than any command you ran. A disagreement means `post_install` did not
+copy what you just downloaded, and a `stat .../bin` error means the archive layout
+regressed.
 
 And once there is a previous release to come from, the upgrade rather than the install —
-`brew upgrade --cask herdr-reshape`, then `herdr-reshape link` again, then the two
-versions agreeing. That the plugin root survived the upgrade at all is half of what is
-being checked; a versioned Caskroom path would not have. Worth one deliberate check per
-release rather than an assumption.
+`brew upgrade herdr-reshape`, then the two versions agreeing again
+**with no `link` run at all**. That is the whole point of the formula: the registration
+made above survives every upgrade because the path it recorded never changes. Worth one
+deliberate check per release rather than an assumption.
 
 Then drive the plugin itself from that installed build: all five actions
 (`user.reshape.move-left`, `move-right`, `move-up`, `move-down`, `fit`) on their
@@ -85,7 +103,33 @@ splitting and closing panes. This is the check that the release is a working plu
 than a working download, and it needs a real herdr session — which is why it lives here
 rather than in any automated gate.
 
-Worth one look on a fresh machine as well: Homebrew quarantines what a cask downloads, and
-the cask's `postflight` strips the attribute back off. If macOS refuses to run
-`herdr-reshape` anyway, `xattr -p com.apple.quarantine "$(which herdr-reshape)"` says
-whether the hook ran.
+## The one-time cask cutover
+
+Not yet done, and it cannot be until a formula release exists. `brew upgrade` does not
+convert a cask install into a formula install, and the tap must not lose the cask before
+there is something to replace it with — so the order is fixed:
+
+1. Cut the first release from this config. goreleaser commits `Formula/herdr-reshape.rb`
+   to the tap; `Casks/herdr-reshape.rb` is still sitting there, now pointing at an older
+   release.
+2. Tell existing macOS users to remove the cask before installing the formula. The two
+   cannot coexist: both put `herdr-reshape` on `PATH`.
+
+   ```sh
+   brew uninstall --zap --cask herdr-reshape
+   herdr plugin unlink user.reshape
+   brew install macintacos/tap/herdr-reshape
+   herdr plugin link "$(brew --prefix)/share/herdr-reshape"
+   ```
+
+3. Delete `Casks/herdr-reshape.rb` from `macintacos/homebrew-tap`. This is one of the two
+   deliberate hand-edits of the tap the
+   [`/release` skill](../.claude/skills/release/SKILL.md)'s "When NOT to Use" allows for.
+
+Announcing before deleting is the point of that order: between the delete and the
+migration, a cask user running `brew upgrade` hits a cask the tap no longer has, and the
+`--zap` in step 2 then falls back to the cached definition under
+`$(brew --caskroom)/herdr-reshape/.metadata` rather than the tap. Leaving the cask in
+place until people have moved costs nothing.
+
+Delete this section once the cutover has happened.
