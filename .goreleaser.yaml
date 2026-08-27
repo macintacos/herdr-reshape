@@ -78,6 +78,22 @@ homebrew_casks:
     # needed: this plugin drives herdr's socket and nothing but.
     dependencies:
       - formula: herdr
+    # `link` copies the build somewhere no upgrade renumbers, which is the same
+    # reason no uninstall reaches it: brew removes the Caskroom staging and the
+    # PATH symlink, and herdr goes on running the copy left behind. zap is the
+    # only stanza brew consults for a path it did not install itself, and it
+    # fires only under `brew uninstall --zap`.
+    #
+    # trash rather than delete, because the directory is under the user's home
+    # and the copy is recoverable from the Trash if this fires by accident.
+    #
+    # The path is spelled out rather than derived, so a machine with
+    # XDG_DATA_HOME set keeps its copy — `link` honours that variable and a cask
+    # has no way to read it. That case, and the herdr registration no stanza can
+    # drop, are what the uninstall line in the caveats is for.
+    zap:
+      trash:
+        - ~/.local/share/herdr-reshape
     # A cask cannot bind a key, and this one deliberately does not register the
     # plugin either — unlike herdr-scratch's, whose post-install hook runs
     # `link`. So both steps are spelled out here, and `link` is not a repair
@@ -102,6 +118,13 @@ homebrew_casks:
       upgrade, since nothing else points herdr at it:
 
         herdr-reshape link
+
+      Removing it takes both halves: --zap for the copy link made,
+      which lives outside the cask, and the unlink for herdr's
+      registration of it, which survives either way.
+
+        brew uninstall --zap --cask herdr-reshape
+        herdr plugin unlink user.reshape
     hooks:
       post:
         # Homebrew quarantines whatever a cask downloads, and macOS refuses to
