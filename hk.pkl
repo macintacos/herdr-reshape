@@ -58,6 +58,15 @@ local linters = new Mapping<String, Step> {
   ["Pkl(Lint)         [[builtins.pkl]]"] = Builtins.pkl
 
   ["Go(Lint)          [[builtins.golangci_lint]]"] = Builtins.golangci_lint
+
+  // The one file here whose only other reader runs on release day: goreleaser
+  // parses .goreleaser.yaml at the step that uploads, which is after the tag is
+  // pushed and public. `check` is a static parse of that same file — no network,
+  // no build — so a typo fails at the commit that introduced it instead.
+  ["Release(Lint)     [[goreleaser check]]"] = new Step {
+    glob = ".goreleaser.yaml"
+    check = "goreleaser check {{ files }}"
+  }
 }
 
 hooks {
