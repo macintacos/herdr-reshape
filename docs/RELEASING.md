@@ -102,34 +102,3 @@ keybindings, and all three events (`pane.created`, `pane.closed`, `pane.exited`)
 splitting and closing panes. This is the check that the release is a working plugin rather
 than a working download, and it needs a real herdr session — which is why it lives here
 rather than in any automated gate.
-
-## The one-time cask cutover
-
-Not yet done, and it cannot be until a formula release exists. `brew upgrade` does not
-convert a cask install into a formula install, and the tap must not lose the cask before
-there is something to replace it with — so the order is fixed:
-
-1. Cut the first release from this config. goreleaser commits `Formula/herdr-reshape.rb`
-   to the tap; `Casks/herdr-reshape.rb` is still sitting there, now pointing at an older
-   release.
-2. Tell existing macOS users to remove the cask before installing the formula. The two
-   cannot coexist: both put `herdr-reshape` on `PATH`.
-
-   ```sh
-   brew uninstall --zap --cask herdr-reshape
-   herdr plugin unlink user.reshape
-   brew install macintacos/tap/herdr-reshape
-   herdr plugin link "$(brew --prefix)/share/herdr-reshape"
-   ```
-
-3. Delete `Casks/herdr-reshape.rb` from `macintacos/homebrew-tap`. This is one of the two
-   deliberate hand-edits of the tap the
-   [`/release` skill](../.claude/skills/release/SKILL.md)'s "When NOT to Use" allows for.
-
-Announcing before deleting is the point of that order: between the delete and the
-migration, a cask user running `brew upgrade` hits a cask the tap no longer has, and the
-`--zap` in step 2 then falls back to the cached definition under
-`$(brew --caskroom)/herdr-reshape/.metadata` rather than the tap. Leaving the cask in
-place until people have moved costs nothing.
-
-Delete this section once the cutover has happened.

@@ -259,8 +259,8 @@ committed the formula before failing, it now points at a release that does not e
 
 **Retrying the same version needs no tap edit** — the next run rewrites
 `Formula/herdr-reshape.rb` from scratch. Reverting that commit by hand is only for a
-version being *abandoned* rather than retried, and it is one of the two cases § When NOT
-to Use's "don't hand-edit the tap" gives way to.
+version being *abandoned* rather than retried, and it is the one case § When NOT to Use's
+"don't hand-edit the tap" gives way to.
 
 **Never leave a pushed tag with no release behind it.** It is the one failure mode that
 misleads silently: `svu` computes the *next* version from the newest tag, so an abandoned
@@ -281,10 +281,6 @@ formula that fails `audit --strict` after the tag is pushed is a public tag with
 tap commit behind it, which is the class of failure the Preconditions exist to keep off
 the far side of § The gate.
 
-Until the cask cutover has happened, that file's § The one-time cask cutover is also part
-of the first formula release — the tap still carries `Casks/herdr-reshape.rb`, and
-removing it is a hand-edit nothing automates.
-
 ## When NOT to Use
 
 - **Building or testing locally.** That is `mise run build`, `mise run test`,
@@ -293,10 +289,8 @@ removing it is a hand-edit nothing automates.
   `mise exec -- goreleaser release --snapshot --clean --skip=publish` builds everything
   into `dist/` and touches nothing remote. No tag, no version, no gate — just run it.
 - **Fixing the tap.** Editing `macintacos/homebrew-tap` by hand is what the formula config
-  exists to end. Two exceptions, both named above: reverting a formula commit for a
-  version being abandoned rather than retried (§ Recovery), and the one-time deletion of
-  `Casks/herdr-reshape.rb` at the first formula release
-  ([docs/RELEASING.md](../../../docs/RELEASING.md) § The one-time cask cutover).
+  exists to end. One exception, named above: reverting a formula commit for a version
+  being abandoned rather than retried (§ Recovery).
 
 ## Common Mistakes
 
