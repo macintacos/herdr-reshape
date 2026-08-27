@@ -86,18 +86,6 @@ func SocketPath(getenv func(string) string) string {
 	return filepath.Join(config, "herdr", "herdr.sock")
 }
 
-// StableRoot is the directory herdr is pointed at: one this plugin owns, which
-// no upgrade renumbers.
-//
-// getenv is a parameter for the same reason SocketPath takes one — the entry
-// point owns the environment read.
-func StableRoot(getenv func(string) string) string {
-	if data := getenv("XDG_DATA_HOME"); data != "" {
-		return filepath.Join(data, "herdr-reshape")
-	}
-	return filepath.Join(getenv("HOME"), ".local", "share", "herdr-reshape")
-}
-
 // roundTrip sends one request and returns the `result` object of the reply.
 //
 // One request, one connection, one line each way — the shape herdr's socket

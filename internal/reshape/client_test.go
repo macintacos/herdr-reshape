@@ -256,30 +256,6 @@ func TestSocketPath(t *testing.T) {
 	}
 }
 
-// TestStableRoot checks the two-step resolution, and that it reads the
-// environment through its parameter rather than around it.
-func TestStableRoot(t *testing.T) {
-	for _, c := range []struct {
-		why  string
-		env  map[string]string
-		want string
-	}{
-		{"the XDG data dir wins", map[string]string{
-			"XDG_DATA_HOME": "/xdg",
-			"HOME":          "/home/j",
-		}, "/xdg/herdr-reshape"},
-		{"and .local/share under HOME otherwise", map[string]string{
-			"HOME": "/home/j",
-		}, "/home/j/.local/share/herdr-reshape"},
-	} {
-		t.Run(c.why, func(t *testing.T) {
-			if got := StableRoot(envOf(c.env)); got != c.want {
-				t.Errorf("StableRoot = %q, want %q", got, c.want)
-			}
-		})
-	}
-}
-
 // --- the typed calls ------------------------------------------------------
 
 func TestLayoutSendsThePaneAndDecodesTheTab(t *testing.T) {

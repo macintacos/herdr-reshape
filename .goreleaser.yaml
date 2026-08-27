@@ -26,13 +26,11 @@ builds:
     # release reporting "dev" with nothing to notice it by.
     ldflags:
       - -s -w -X main.version={{ .Version }}
-    # A path, not just a name. `herdr-reshape link` copies bin/ and the manifest
-    # out of two directories above the *resolved* executable —
-    # Dir(Dir(EvalSymlinks(os.Executable()))), cmd/link.go's buildRoot — and it
-    # is that EvalSymlinks which turns the formula's PATH symlink into the keg's
-    # libexec. A binary at the archive root would leave the extracted tree one
-    # level short, and link would fail on a bare
-    # `stat .../bin: no such file or directory`.
+    # A path, not just a name: it is what makes the extracted archive a plugin
+    # root herdr can load — `bin/herdr-reshape` beside `herdr-plugin.toml`, the
+    # layout the manifest's actions and events assume when they exec
+    # `./bin/herdr-reshape`. A binary at the archive root would leave the tree
+    # one level short and herdr would find no manifest beside it.
     #
     # Two defaults hold this up, so leave both alone: strip_binary_directory
     # would flatten the path back out of the archive, and wrap_in_directory
@@ -98,9 +96,8 @@ brews:
     # libexec rather than a keg directory brew links into the prefix, so nothing
     # here collides with keg linking and post_install below owns
     # share/herdr-reshape outright. The archive is already a plugin root —
-    # bin/ beside the manifest — and this keeps it one: cmd/link.go's buildRoot
-    # resolves os.Executable through EvalSymlinks, so the binary invoked from
-    # PATH as `herdr-reshape` still reports libexec as its build root.
+    # bin/ beside the manifest — and installing it whole keeps it one, which is
+    # what post_install copies out.
     #
     # LICENSE lands in the keg rather than libexec: MIT requires the notice
     # travel with the binary, and libexec holds exactly the plugin root that
@@ -115,8 +112,9 @@ brews:
     # change underneath.
     #
     # Removing before the copy replaces rather than merges, so a file a release
-    # stopped shipping does not linger — the same semantics as installBuild in
-    # cmd/link.go. Both calls raise on failure, which brew surfaces as "The
+    # stopped shipping does not linger in the root forever — herdr would keep
+    # finding it, and nothing else would remove it. Both calls raise on
+    # failure, which brew surfaces as "The
     # post-install step did not complete successfully" rather than leaving a
     # half-refreshed root behind quietly. `rm_r` guarded by exist? rather than
     # the shorter rm_rf: `brew audit --strict` rejects rm_rf outright, and the

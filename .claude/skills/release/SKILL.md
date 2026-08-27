@@ -27,7 +27,7 @@ The user invoked: `/release $ARGUMENTS`. `$ARGUMENTS` is exactly one bump word, 
 | `<bump>` | Example, from `v0.1.0` | Use when |
 | -------- | ---------------------- | -------- |
 | `patch`  | `v0.1.1`               | Fixes only; nothing a user has to do anything about. |
-| `minor`  | `v0.2.0`               | New behaviour, or a change to what `link` / an action does. |
+| `minor`  | `v0.2.0`               | New behaviour, or a change to what an action does. |
 | `major`  | `v1.0.0`               | A break — the manifest, the plugin root layout, or a removed command. |
 
 The examples are illustrative — `v0.1.0` is whatever `svu current` reports at the time,
@@ -148,11 +148,11 @@ the whole body of the GitHub release. Write it for somebody deciding whether to 
 not for somebody reading `git log`:
 
 - Lead with what changed for a user of the keybindings or the CLI. A commit that renamed
-  an internal helper does not earn a line; one that changed what `herdr-reshape link` does
-  earns the first one.
+  an internal helper does not earn a line; one that changed what an action does, or what
+  the install asks of the user, earns the first one.
 - Group related commits into one entry rather than transcribing each. Seven commits are
   often three changes.
-- Call out anything requiring action — a re-`link` after upgrading, a config change, a
+- Call out anything requiring action — a re-registration with herdr, a config change, a
   removed flag — under its own heading. This is the part people actually need.
 - Keep the conventional-commit prefixes out of the prose; they are metadata, not English.
 

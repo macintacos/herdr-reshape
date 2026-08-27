@@ -129,11 +129,9 @@ func assertEveryCommandDeclared(t *testing.T, root *cobra.Command, m testManifes
 
 	for _, c := range root.Commands() {
 		// cobra adds help and completion itself; the manifest has no reason to
-		// name them. link is different in kind from the other four: the manifest
-		// describes what herdr can invoke, and link is what installs the
-		// manifest — a human runs it, herdr never does, and declaring it as an
-		// action would offer a keybinding for installing the plugin.
-		if c.Name() == "help" || c.Name() == "completion" || c.Name() == "link" {
+		// name them. Every command this plugin defines is one herdr invokes, so
+		// anything else registered here belongs in the manifest.
+		if c.Name() == "help" || c.Name() == "completion" {
 			continue
 		}
 		if !declared[c.Name()] {
