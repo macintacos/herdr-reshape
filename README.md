@@ -30,21 +30,50 @@ on the grid and how you re-arm the automatic one.
 
 ## Install
 
-Needs herdr 0.8.0 or newer. Linux and macOS take the same three commands.
+Needs herdr 0.8.0 or newer.
 
 ```bash
-brew install macintacos/tap/herdr-reshape
+brew install --cask macintacos/tap/herdr-reshape
 herdr plugin link "$(brew --prefix)/share/herdr-reshape"
 herdr server reload-config
 ```
 
-`herdr plugin link` is one-time. That path is refreshed on every upgrade, so from here on
-`brew upgrade` is the whole procedure. Check it took — `user.reshape` is the id herdr
-knows this plugin by:
+`herdr plugin link` is one-time. The cask refreshes that path on every install and
+upgrade, so from here on `brew upgrade` is the whole procedure. Check it took —
+`user.reshape` is the id herdr knows this plugin by:
 
 ```bash
 herdr plugin action list --plugin user.reshape   # five actions
 ```
+
+Installed 0.3.0 or 0.3.1, which shipped as a formula? Swap it for the cask once. The
+registration survives — both put the plugin root at the same path, so there is no
+`herdr plugin link` to re-run:
+
+```bash
+brew uninstall herdr-reshape
+brew install --cask macintacos/tap/herdr-reshape
+```
+
+### On Linux
+
+Homebrew has no cask support on Linux, so take the prebuilt tarball instead. Every
+[release](https://github.com/macintacos/herdr-reshape/releases) ships `linux_amd64` and
+`linux_arm64` archives that are already a plugin root — `bin/herdr-reshape` beside the
+manifest — so nothing is compiled and Go is not needed.
+
+```bash
+mkdir -p ~/.local/opt/herdr-reshape
+tar -xzf herdr-reshape_0.3.1_linux_arm64.tar.gz -C ~/.local/opt/herdr-reshape
+herdr plugin link ~/.local/opt/herdr-reshape
+```
+
+Replace the tarball in place to upgrade. The registration points at a directory that is
+yours rather than a package manager's, so nothing renumbers it and the link holds.
+
+The event hooks' behaviour was measured on macOS and has not been re-measured on Linux —
+see the note in [`herdr-plugin.toml`](herdr-plugin.toml). The actions have nothing
+OS-shaped in them.
 
 ## Configure
 
@@ -107,12 +136,14 @@ Binding the moves both ways at once is harmless. For fit, `=` is the key tmux us
 
 ## Uninstall
 
-Three steps. `brew uninstall` takes back only what it installed into the keg: the plugin
-root at `share/herdr-reshape` is written by the formula's `post_install`, so brew does not
-track it, and herdr's registration is its own to forget.
+Three steps, because brew owns only the first. The plugin root at `share/herdr-reshape` is
+written by the cask's own post-install hook rather than installed by brew, so a plain
+uninstall leaves it behind — and `--zap` is not the answer, since brew removes a path
+outside your home directory with `sudo` and would ask for a password to delete a directory
+you already own. herdr's registration is its own to forget.
 
 ```bash
-brew uninstall herdr-reshape
+brew uninstall --cask herdr-reshape
 herdr plugin unlink user.reshape
 rm -rf "$(brew --prefix)/share/herdr-reshape"
 ```

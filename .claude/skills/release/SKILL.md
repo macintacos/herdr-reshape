@@ -7,7 +7,7 @@ argument-hint: patch | minor | major
 # Release
 
 Take a bump word and turn it into a published release: a GitHub release with checksums and
-notes, and a Homebrew formula in
+notes, and a Homebrew cask in
 [macintacos/homebrew-tap](https://github.com/macintacos/homebrew-tap) pointing at it.
 
 The version is **derived** from the last tag by `svu`, never chosen. That is the whole
@@ -63,7 +63,7 @@ than working around it.
 ```sh
 mise exec -- goreleaser --version   # installed via mise.toml
 mise exec -- svu --version          # same
-mise run goreleaser-check           # the config still validates
+goreleaser check                    # the config still validates
 git branch --show-current           # trunk
 git status --porcelain              # empty — including untracked files
 git fetch --prune --prune-tags origin && git rev-parse HEAD origin/trunk   # identical SHAs
@@ -73,11 +73,6 @@ git fetch --prune --prune-tags origin && git rev-parse HEAD origin/trunk   # ide
   [mise.toml](../../../mise.toml), so this means mise has not installed it. Say
   `mise install` and stop; do not fall back to a system copy, which is not the pinned
   version.
-- **`mise run goreleaser-check` rather than `goreleaser check`** → the config publishes a
-  formula, which needs the deprecated `brews` block, and `check` exits non-zero on any
-  deprecation with no flag to tolerate one. The task tolerates `brews` and nothing else —
-  a second deprecated property, or any real config error, still stops the release here. Do
-  not "fix" a failure by reaching for `goreleaser check` directly.
 - **Not on `trunk`, dirty, or ahead of / behind `origin/trunk`** → stop. A release is cut
   from the default branch's tip; a tag on anything else points at a tree nobody reviewed.
   *Dirty* means what goreleaser means by it: `git status --porcelain` empty,
@@ -90,10 +85,10 @@ git fetch --prune --prune-tags origin && git rev-parse HEAD origin/trunk   # ide
   `origin/trunk`, so there is no legitimate unpushed local tag to lose.
 - **The token.** goreleaser reads `GITHUB_TOKEN` and it needs contents write on **both**
   `macintacos/herdr-reshape` (to create the release) and `macintacos/homebrew-tap` (to
-  commit the formula). `$(mise exec -- gh auth token)` covers it when `gh` is
-  authenticated. If neither `$GITHUB_TOKEN` nor `mise exec -- gh auth token` yields one,
-  stop and say exactly that — do not start a sequence that will fail at its last and least
-  recoverable step.
+  commit the cask). `$(mise exec -- gh auth token)` covers it when `gh` is authenticated.
+  If neither `$GITHUB_TOKEN` nor `mise exec -- gh auth token` yields one, stop and say
+  exactly that — do not start a sequence that will fail at its last and least recoverable
+  step.
 
 Then **ask the user to confirm the repo's checks were run** — `mise run preflight` covers
 lint and tests in one. Their word is the gate (Invariant 2). If they have not, stop and
@@ -203,7 +198,7 @@ git status --porcelain
 # 6. The tag. Everything before this is local and freely undone; this is not.
 git tag -a <tag> -m <tag> && git push origin <tag>
 
-# 7. Build, publish the release, commit the formula.
+# 7. Build, publish the release, commit the cask.
 GITHUB_TOKEN="${GITHUB_TOKEN:-$(mise exec -- gh auth token)}" \
   mise exec -- goreleaser release \
   --clean --release-notes <notes>
@@ -239,7 +234,7 @@ deletion there errors on a ref that never existed. Check with
 | Bump commit pushed, no tag (step 4) | Ordinary git. Fix forward with another commit, or revert it. Nothing references it yet. |
 | Local tag only (step 6's `git tag` ran, its push did not) | `git tag -d <tag>`, fix the cause, retry step 6. Nothing is public. Note the repo's `pre-push` hook runs `go test ./...`, so a red suite is a likely cause. |
 | **Tag pushed**, no release (step 7 failed early) | `git push --delete origin <tag>` then `git tag -d <tag>`, in that order. Leave the bump commit — it is correct and the retry needs it. |
-| Tag pushed, release and/or formula created (step 7 failed late) | Below. |
+| Tag pushed, release and/or cask created (step 7 failed late) | Below. |
 
 A failure partway through `goreleaser release` is the one worth spelling out, because it
 can leave three things behind and they must come off in order:
@@ -251,16 +246,16 @@ git tag -d <tag>                             # then the local one
 ```
 
 Check the tap as well —
-`mise exec -- gh api repos/macintacos/homebrew-tap/contents/Formula --jq '.[].name'`,
+`mise exec -- gh api repos/macintacos/homebrew-tap/contents/Casks --jq '.[].name'`,
 listing the directory rather than probing the file: a missing file and an unreachable
 repository both come back `404`, and so would a typo or an expired token. If goreleaser
-committed the formula before failing, it now points at a release that does not exist and
+committed the cask before failing, it now points at a release that does not exist and
 `brew install` will 404 for anyone who tries.
 
 **Retrying the same version needs no tap edit** — the next run rewrites
-`Formula/herdr-reshape.rb` from scratch. Reverting that commit by hand is only for a
-version being *abandoned* rather than retried, and it is the one case § When NOT to Use's
-"don't hand-edit the tap" gives way to.
+`Casks/herdr-reshape.rb` from scratch. Reverting that commit by hand is only for a version
+being *abandoned* rather than retried, and it is the one case § When NOT to Use's "don't
+hand-edit the tap" gives way to.
 
 **Never leave a pushed tag with no release behind it.** It is the one failure mode that
 misleads silently: `svu` computes the *next* version from the newest tag, so an abandoned
@@ -270,16 +265,16 @@ the repo like a version that shipped.
 ## After the release
 
 The install checks are in [docs/RELEASING.md](../../../docs/RELEASING.md) —
-`brew install`, `brew test`, the upgrade cycle with **no `link` step**, and driving all
-five actions and all three events from the installed build. Point the user at it rather
-than restating it here; two copies of a checklist drift, and that one is what somebody
-reads without an agent in the room.
+`brew install --cask`, the two version readings, the upgrade cycle with
+**no `link` step**, and driving all five actions and all three events from the installed
+build. Point the user at it rather than restating it here; two copies of a checklist
+drift, and that one is what somebody reads without an agent in the room.
 
-The formula's own lint — `brew style` and `brew audit --strict` on the rendered file —
-belongs *before* the tag, not here; it is part of that file's **Rehearse first** block. A
-formula that fails `audit --strict` after the tag is pushed is a public tag with a broken
-tap commit behind it, which is the class of failure the Preconditions exist to keep off
-the far side of § The gate.
+The cask's own lint — `brew audit --strict --cask` on the rendered file — belongs *before*
+the tag, not here; it is part of that file's **Rehearse first** block. A cask that fails
+`audit --strict` after the tag is pushed is a public tag with a broken tap commit behind
+it, which is the class of failure the Preconditions exist to keep off the far side of §
+The gate. `brew style` is read there, not gated on — RELEASING says why.
 
 ## When NOT to Use
 
@@ -288,9 +283,9 @@ the far side of § The gate.
 - **Rehearsing the release machinery.**
   `mise exec -- goreleaser release --snapshot --clean --skip=publish` builds everything
   into `dist/` and touches nothing remote. No tag, no version, no gate — just run it.
-- **Fixing the tap.** Editing `macintacos/homebrew-tap` by hand is what the formula config
-  exists to end. One exception, named above: reverting a formula commit for a version
-  being abandoned rather than retried (§ Recovery).
+- **Fixing the tap.** Editing `macintacos/homebrew-tap` by hand is what the cask config
+  exists to end. One exception, named above: reverting a cask commit for a version being
+  abandoned rather than retried (§ Recovery).
 
 ## Common Mistakes
 
