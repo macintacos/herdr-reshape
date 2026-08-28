@@ -1,7 +1,8 @@
-# Builds the release artifacts and publishes the Homebrew formula that installs
-# them, on macOS and Linux alike. Releases are cut from a laptop rather than CI,
-# so docs/RELEASING.md carries the half this file cannot: the tag, the token,
-# and the checks that need a real herdr session to make.
+# Builds the release artifacts and publishes the Homebrew cask that installs
+# them on macOS. Linux gets archives and no brew path — see the cask block.
+# Releases are cut from a laptop rather than CI, so docs/RELEASING.md carries
+# the half this file cannot: the tag, the token, and the checks that need a real
+# herdr session to make.
 # https://goreleaser.com
 version: 2
 project_name: herdr-reshape
@@ -45,102 +46,50 @@ archives:
       - herdr-plugin.toml
       - LICENSE
       - README.md
-brews:
-  # A formula rather than a cask, because a cask is macOS-only — Homebrew on
-  # Linux refuses to install one at all — and nothing in this plugin is
-  # OS-shaped. One formula is what gives Linux a brew path. Its sha256 per
+homebrew_casks:
+  # A cask, because it is what goreleaser supports going forward: `brews` is
+  # deprecated and survives only until goreleaser v3. Its sha256 per
   # architecture is read from the checksums.txt goreleaser generates by default,
   # so it covers the binary the user actually runs rather than source someone
   # else's toolchain rebuilt.
   #
-  # Three measured facts hold this shape up, and each one closes a door:
-  #
-  #   - post_install re-runs on `brew upgrade`, not only on install. That is
-  #     what lets the copy below stand in for the link step an upgrade used to
-  #     need. Confirmed on both platforms before this block was written.
-  #   - post_install gets a throwaway $HOME on macOS — the install sandbox calls
-  #     deny_read_home — so it can never register anything with herdr there. It
-  #     reads a registry that does not exist and writes one that is deleted
-  #     moments later. Linux sandboxes differently and does hand it the real
-  #     $HOME, so registration could in principle be automated on that platform
-  #     alone; it deliberately is not, because one install story beats two.
-  #     Either way registration is a one-time user step, in the caveats.
-  #   - herdr records a plugin by the *resolved* directory holding its manifest.
-  #     Point it at opt/herdr-reshape and it records the Cellar path numbered by
-  #     version, which the next upgrade deletes — the exact failure this whole
-  #     arrangement exists to prevent. It gets share/herdr-reshape instead,
-  #     which is a real directory and is never renumbered.
-  #
-  # `brews` is deprecated as of goreleaser 2.16 in favour of `homebrew_casks`,
-  # which is macOS-only and so not a replacement for this. It survives until
-  # goreleaser v3 — deprecated options are removed only on majors — and
-  # .mise/tasks/goreleaser-check is what keeps the lint gate green until then.
+  # Casks are macOS-only — Homebrew on Linux refuses to install one at all — so
+  # the linux archives above are what Linux installs from: extracted by hand and
+  # registered with `herdr plugin link`, which works because an archive is
+  # already a plugin root. Not `herdr plugin install`, which takes a GitHub
+  # owner/repo and compiles the manifest's [[build]] from source rather than
+  # consuming a release artifact. There is no brew path on Linux, and no
+  # arrangement of this block creates one.
   - repository:
       owner: macintacos
       name: homebrew-tap
-    # Spelled out because `brews` has no default for it, unlike `homebrew_casks`
-    # which defaults to Casks. Left unset the formula is committed to the tap
-    # root, where `Tap#formula_dir` still finds it only until something creates
-    # a Formula/ directory alongside it — after which `brew install` fails with
-    # "No available formula" and nothing here explains why.
-    directory: Formula
     homepage: https://github.com/macintacos/herdr-reshape
     description: Move the focused herdr pane, and best-fit a tab into an even grid
     license: MIT
+    # Spelled out because goreleaser derives the cask's `binary` stanza from the
+    # base name alone, which would point Homebrew at a herdr-reshape sitting at
+    # the top of the staged directory — where the archive deliberately does not
+    # put it. The symlink it makes still lands on PATH as `herdr-reshape`; only
+    # its target changes.
+    binaries:
+      - bin/herdr-reshape
     # herdr is what loads the plugin, so it is not optional. Nothing else is
     # needed: this plugin drives herdr's socket and nothing but. It is a
-    # homebrew/core formula and bottled on both platforms, so this resolves
-    # without a source build wherever bottles are available.
+    # homebrew/core formula and bottled, so this resolves without a source
+    # build.
     dependencies:
-      - name: herdr
-    # libexec rather than a keg directory brew links into the prefix, so nothing
-    # here collides with keg linking and post_install below owns
-    # share/herdr-reshape outright. The archive is already a plugin root —
-    # bin/ beside the manifest — and installing it whole keeps it one, which is
-    # what post_install copies out.
-    #
-    # LICENSE lands in the keg rather than libexec: MIT requires the notice
-    # travel with the binary, and libexec holds exactly the plugin root that
-    # post_install copies — bin/ plus the manifest, which is all herdr reads.
-    install: |
-      libexec.install "bin", "herdr-plugin.toml"
-      bin.install_symlink libexec/"bin/herdr-reshape"
-      prefix.install "LICENSE"
-    # The whole answer to the upgrade constraint: a plugin root at a path no
-    # release renumbers, refreshed on every install and every upgrade. herdr is
-    # registered against it once and stays pointed there while the contents
-    # change underneath.
-    #
-    # Removing before the copy replaces rather than merges, so a file a release
-    # stopped shipping does not linger in the root forever — herdr would keep
-    # finding it, and nothing else would remove it. Both calls raise on
-    # failure, which brew surfaces as "The
-    # post-install step did not complete successfully" rather than leaving a
-    # half-refreshed root behind quietly. `rm_r` guarded by exist? rather than
-    # the shorter rm_rf: `brew audit --strict` rejects rm_rf outright, and the
-    # guard keeps a genuine removal failure loud instead of swallowed.
-    post_install: |
-      root = HOMEBREW_PREFIX/"share/herdr-reshape"
-      rm_r root if root.exist?
-      root.mkpath
-      cp_r [libexec/"bin", libexec/"herdr-plugin.toml"], root
-    # `brew audit --strict` refuses a formula with no test block, and this is
-    # the assertion worth putting in it: "dev" means the ldflags stamp broke and
-    # the release is misreporting its version to the one thing that reads it.
-    # Nothing runs on a tag — there is no CI and `brew test` is a separate
-    # command — so docs/RELEASING.md runs it by hand once per release.
-    test: |
-      assert_match version.to_s, shell_output("#{bin}/herdr-reshape --version")
-    # No `custom_block` holding a `livecheck do skip` — goreleaser can only
-    # place custom_block after the platform blocks, where `brew audit --strict`
-    # rejects it: livecheck must precede depends_on. The audit is a gate
-    # docs/RELEASING.md runs, so it wins.
-    #
-    # A formula cannot bind a key, and it deliberately does not register the
-    # plugin either — post_install cannot reach the real herdr registry (see the
-    # header). So both steps are spelled out here. The registration is one-time:
-    # an upgrade rewrites what sits behind the path herdr recorded, so there is
-    # nothing to re-run.
+      - formula: herdr
+    # No `zap` stanza for the plugin root the post-install hook maintains, even
+    # though that is the one path brew will not remove on its own. Both `trash`
+    # and `delete` route a path outside $HOME through `sudo rm`, measured — so a
+    # zap would prompt for a password to delete a user-owned directory, and fail
+    # outright wherever sudo cannot prompt. The removal is one `rm -rf` the user
+    # can read, so the caveats spell it out instead.
+    # A cask cannot bind a key, and this one deliberately does not register the
+    # plugin either — that would run herdr from a hook whose environment brew
+    # has already filtered (see below), to save a step taken once. So both are
+    # spelled out here. The registration is one-time: every upgrade rewrites
+    # what sits behind the path herdr recorded, so there is nothing to re-run.
     caveats: |
       Bind the five actions in ~/.config/herdr/config.toml, one block each:
 
@@ -162,9 +111,50 @@ brews:
         herdr plugin link "$(brew --prefix)/share/herdr-reshape"
 
       Removing it takes three steps, because brew owns only the
-      first: a formula has no zap, and herdr's registration
-      outlives the uninstall either way.
+      first: the plugin root is written by this cask's own
+      post-install rather than installed by brew, and herdr's
+      registration outlives the uninstall either way.
 
-        brew uninstall herdr-reshape
+        brew uninstall --cask herdr-reshape
         herdr plugin unlink user.reshape
         rm -rf "$(brew --prefix)/share/herdr-reshape"
+    hooks:
+      post:
+        # Two jobs, and the second is the whole reason this cask installs
+        # cleanly across an upgrade.
+        #
+        # Homebrew quarantines whatever a cask downloads, and macOS refuses to
+        # run a quarantined binary from a developer it cannot identify — so
+        # without the strip, the `herdr-reshape` the `binary` stanza puts on
+        # PATH will not launch. The `-h` probe is not defensive padding: xattr
+        # was a /usr/bin/python3 script until recently, and on a machine without
+        # the Command Line Tools it fails rather than runs. goreleaser's own
+        # docs ship the guard for that reason — a cask that cannot strip the
+        # attribute should still install.
+        #
+        # The copy is what herdr actually runs. A cask stages into a Caskroom
+        # path numbered by version, which the next upgrade deletes, so herdr —
+        # which records a plugin by the *resolved* directory holding its
+        # manifest — cannot be pointed there. It gets share/herdr-reshape
+        # instead, a real directory that is never renumbered, refreshed on every
+        # install and every upgrade. That is what makes `herdr plugin link` a
+        # one-time step rather than something to re-run after each upgrade.
+        #
+        # Copying rather than symlinking, and with plain reads and writes:
+        # FileUtils carries no extended attributes, so the tree herdr loads
+        # comes out unquarantined regardless of what the strip above did.
+        #
+        # Removing before the copy replaces rather than merges, so a file a
+        # release stopped shipping does not linger in the root forever — herdr
+        # would keep finding it, and nothing else would remove it. `rm_r`
+        # guarded by exist? rather than the shorter rm_rf: `brew style` rejects
+        # rm_rf outright, and the guard keeps a genuine removal failure loud
+        # instead of swallowed.
+        install: |
+          if system_command("/usr/bin/xattr", args: ["-h"]).exit_status == 0
+            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/bin/herdr-reshape"]
+          end
+          root = Pathname.new("#{HOMEBREW_PREFIX}/share/herdr-reshape")
+          FileUtils.rm_r(root) if root.exist?
+          root.mkpath
+          FileUtils.cp_r(["#{staged_path}/bin", "#{staged_path}/herdr-plugin.toml"], root)
