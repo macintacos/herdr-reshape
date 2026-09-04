@@ -264,22 +264,32 @@ func (c *Client) Notify(title, body string) error {
 	return err
 }
 
-// FocusedPane asks herdr which pane has focus, for an entry point handed no id.
-//
-// A reply where nothing is focused returns [ErrNoPane] rather than a failure:
-// callers announce or fall silent on it, they do not report it.
-func (c *Client) FocusedPane() (geometry.PaneID, error) {
+// Panes is every pane herdr is showing, each carrying the tab it sits in — the
+// only reply that names a tab herdr has not been asked about.
+func (c *Client) Panes() ([]geometry.PaneEntry, error) {
 	result, err := c.do("pane.list", map[string]any{})
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	var payload struct {
 		Panes []geometry.PaneEntry `json:"panes"`
 	}
 	if err := json.Unmarshal(result, &payload); err != nil {
-		return "", fmt.Errorf("pane.list: decode %s: %w", result, err)
+		return nil, fmt.Errorf("pane.list: decode %s: %w", result, err)
 	}
-	for _, entry := range payload.Panes {
+	return payload.Panes, nil
+}
+
+// FocusedPane asks herdr which pane has focus, for an entry point handed no id.
+//
+// A reply where nothing is focused returns [ErrNoPane] rather than a failure:
+// callers announce or fall silent on it, they do not report it.
+func (c *Client) FocusedPane() (geometry.PaneID, error) {
+	panes, err := c.Panes()
+	if err != nil {
+		return "", err
+	}
+	for _, entry := range panes {
 		if entry.Focused {
 			return entry.PaneID, nil
 		}

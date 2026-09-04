@@ -171,15 +171,55 @@ func (c *Client) Created(pane geometry.PaneID) (bool, error) {
 	return true, nil
 }
 
-// Closed fits the tab pane survives in, if a close is what knocked it off the
-// grid, and reports whether it did.
+// Closed fits every tab a close knocked off the grid, and reports how many it
+// fitted.
+//
+// A sweep, because the event names no tab to look at: pane.closed and
+// pane.exited both fire after herdr has collapsed the split, and the pane_id
+// they carry already answers pane_not_found. Following focus instead would miss
+// the case this exists for — a tab whose panes are closing in the background,
+// which is where a scripted fan-out tears itself down.
+//
+// The gate is what makes a sweep safe: a tab a close did not knock off the grid
+// is one closedTab declines, so every tab but the one that lost a pane costs a
+// layout read and nothing more.
+func (c *Client) Closed() (int, error) {
+	panes, err := c.Panes()
+	if err != nil {
+		return 0, err
+	}
+	fitted := 0
+	// The first failure is carried to the end rather than returned at it: a pane
+	// dying between the list and its own layout is this path's normal weather —
+	// a burst of closes is several of them — and a tab that has gone must not
+	// strand the tabs behind it.
+	var failed error
+	swept := map[geometry.TabID]bool{}
+	for _, entry := range panes {
+		if swept[entry.TabID] {
+			continue
+		}
+		swept[entry.TabID] = true
+		did, err := c.closedTab(entry.PaneID)
+		if err != nil && failed == nil {
+			failed = err
+		}
+		if did {
+			fitted++
+		}
+	}
+	return fitted, failed
+}
+
+// closedTab fits the tab pane survives in, if a close is what knocked it off
+// the grid, and reports whether it did.
 //
 // Closing a pane collapses its split into its sibling, and the sibling inherits
 // the *whole* slot rather than an even share of the tab: thirds minus the
 // middle pane is a third beside two thirds, not two halves. So there is
 // something to correct here, and [geometry.CollapsedFromEven] is what decides
 // whether correcting it would be trampling a tab someone tuned by hand.
-func (c *Client) Closed(pane geometry.PaneID) (bool, error) {
+func (c *Client) closedTab(pane geometry.PaneID) (bool, error) {
 	root, layout, err := c.tabTree(pane)
 	if err != nil {
 		return false, err

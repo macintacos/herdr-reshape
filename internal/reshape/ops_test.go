@@ -334,9 +334,9 @@ func TestCreatedOnTheTabsOnlyPane(t *testing.T) {
 func TestClosedFitsWhenACloseIsWhyTheTabIsOff(t *testing.T) {
 	client, f := clientOf(layoutResult(evenMinusMiddle), layoutResult(fittedAcross))
 
-	fitted, err := client.Closed("A")
+	fitted, err := client.closedTab("A")
 	if err != nil {
-		t.Fatalf("Closed: %v", err)
+		t.Fatalf("closedTab: %v", err)
 	}
 	if !fitted {
 		t.Error("thirds minus the middle pane is where a close leaves an even tab")
@@ -350,14 +350,56 @@ func TestClosedFitsWhenACloseIsWhyTheTabIsOff(t *testing.T) {
 func TestClosedLeavesAHandTunedTabAlone(t *testing.T) {
 	client, f := clientOf(layoutResult(offsetRows))
 
-	fitted, err := client.Closed("A")
+	fitted, err := client.closedTab("A")
 	if err != nil {
-		t.Fatalf("Closed: %v", err)
+		t.Fatalf("closedTab: %v", err)
 	}
 	if fitted {
 		t.Error("a tab a fiftieth off its grid line did not come from an even one")
 	}
 	wantMethods(t, f, "pane.layout")
+}
+
+// TestClosedSweepsEveryTab is why the close path lists panes instead of
+// following focus: the tab that lost one is the tab nobody is looking at,
+// which is exactly where a scripted fan-out tears itself down.
+func TestClosedSweepsEveryTab(t *testing.T) {
+	client, f := clientOf(
+		panesResult("A@w1:tQ", "C@w1:tR", "D@w1:tR"),
+		layoutResult(evenMinusMiddle), layoutResult(fittedAcross),
+		layoutResult(offsetRows),
+	)
+
+	fitted, err := client.Closed()
+	if err != nil {
+		t.Fatalf("Closed: %v", err)
+	}
+	if fitted != 1 {
+		t.Errorf("fitted %d tabs, want the one a close knocked off the grid", fitted)
+	}
+	// One layout per tab rather than per pane: D is w1:tR's second pane.
+	wantMethods(t, f, "pane.list", "pane.layout", "pane.layout", "pane.layout")
+	wantCall(t, f, 4, "pane.layout", map[string]any{"pane_id": "C"})
+}
+
+// TestClosedSweepsPastATabThatFails covers this path's normal weather: a burst
+// of closes means panes go on dying while the sweep runs, and a tab that is
+// already gone must not take the tabs after it with it.
+func TestClosedSweepsPastATabThatFails(t *testing.T) {
+	client, f := clientOf(
+		panesResult("A@w1:tQ", "C@w1:tR"),
+		failReply,
+		layoutResult(evenMinusMiddle), layoutResult(fittedAcross),
+	)
+
+	fitted, err := client.Closed()
+	if err == nil {
+		t.Error("the tab that went is still reported")
+	}
+	if fitted != 1 {
+		t.Errorf("fitted %d tabs, want the one behind the failure", fitted)
+	}
+	wantMethods(t, f, "pane.list", "pane.layout", "pane.layout", "pane.layout")
 }
 
 // --- the two short-circuits -----------------------------------------------
@@ -385,8 +427,8 @@ func TestZoomedShortCircuitsEveryOperation(t *testing.T) {
 
 	t.Run("closed", func(t *testing.T) {
 		client, f := clientOf(layoutResult(zoomed(evenMinusMiddle)))
-		if fitted, err := client.Closed("A"); fitted || err != nil {
-			t.Errorf("Closed = %v, %v", fitted, err)
+		if fitted, err := client.closedTab("A"); fitted || err != nil {
+			t.Errorf("closedTab = %v, %v", fitted, err)
 		}
 		wantMethods(t, f, "pane.layout")
 	})

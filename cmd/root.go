@@ -97,32 +97,16 @@ keybindings, created and closed by pane events.`,
 	}
 	closed := &cobra.Command{
 		Use:   "closed",
-		Short: "Fit the tab a pane just left (pane.closed and pane.exited hooks)",
+		Short: "Fit any tab a pane just left (pane.closed and pane.exited hooks)",
 		Args:  cobra.NoArgs,
 		RunE: func(_ *cobra.Command, _ []string) error {
 			// The pane named by the event is no use and is deliberately not
 			// read: measured on 0.8.2, pane.closed and pane.exited both fire
 			// after the split has collapsed, so pane.layout answers
 			// pane_not_found for it. Neither event carries a tab id either, so
-			// the only handle left on the right tab is wherever focus went —
-			// which, measured, is a surviving pane of the same tab whenever the
-			// pane that closed was in the focused one.
-			//
-			// A pane closing in a *background* tab therefore looks at the
-			// focused tab instead. That is left alone rather than worked
-			// around, because the gate already makes it harmless: a focused tab
-			// that is even is one a fit does nothing to, and one that is off the
-			// grid by hand is one the gate declines.
-			pane, err := client.FocusedPane()
-			if errors.Is(err, reshape.ErrNoPane) {
-				// Silent for the same reason created is: no keypress behind
-				// this, so there is nobody a notification would reach.
-				return nil
-			}
-			if err != nil {
-				return err
-			}
-			_, err = client.Closed(pane)
+			// there is no handle on the tab that lost a pane, and the sweep
+			// stands in for one.
+			_, err := client.Closed()
 			return err
 		},
 	}

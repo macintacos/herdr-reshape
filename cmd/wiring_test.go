@@ -8,6 +8,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -232,14 +233,17 @@ func TestMoveSendsTheDirectionItWasGiven(t *testing.T) {
 	}
 }
 
-// TestClosedAsksWhichPaneHasFocus pins the third rule. pane.closed and
-// pane.exited both fire after the split has collapsed, so the event's own pane
-// is already pane_not_found, and neither event carries a tab id — wherever
-// focus went is the only handle left on the right tab.
-func TestClosedAsksWhichPaneHasFocus(t *testing.T) {
+// TestClosedSweepsEveryTab pins the third rule. pane.closed and pane.exited
+// both fire after the split has collapsed, so the event's own pane is already
+// pane_not_found, and neither event carries a tab id — so every tab is read,
+// not just whichever one has focus. The tab that lost a pane is routinely one
+// nobody is looking at.
+func TestClosedSweepsEveryTab(t *testing.T) {
 	stub := serveHerdr(t, map[string]string{
 		"pane.layout": evenTab,
-		"pane.list":   `{"result":{"panes":[{"pane_id":"B","tab_id":"w1:tQ","focused":true}]}}`,
+		"pane.list": `{"result":{"panes":[
+			{"pane_id":"B","tab_id":"w1:tQ","focused":true},
+			{"pane_id":"D","tab_id":"w1:tR","focused":false}]}}`,
 	})
 	// A hook id is set, and closed must still ignore it: it names the pane that
 	// just went away.
@@ -252,8 +256,17 @@ func TestClosedAsksWhichPaneHasFocus(t *testing.T) {
 	if len(got) < 2 || got[0].Method != "pane.list" {
 		t.Fatalf("want pane.list first, got %v", methodsOf(got))
 	}
-	if got[1].Params["pane_id"] != "B" {
-		t.Errorf("closed reads the focused pane's tab, not the event's; got %v", got[1].Params["pane_id"])
+	var read []any
+	for _, req := range got[1:] {
+		if req.Method == "pane.layout" {
+			read = append(read, req.Params["pane_id"])
+		}
+	}
+	if !slices.Contains(read, any("B")) || !slices.Contains(read, any("D")) {
+		t.Errorf("closed reads the focused tab and the background one, got %v", read)
+	}
+	if slices.Contains(read, any("A")) {
+		t.Errorf("closed read the event's own pane, which is already gone: %v", read)
 	}
 }
 

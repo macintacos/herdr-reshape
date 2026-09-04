@@ -1,6 +1,9 @@
 package reshape
 
-import "strings"
+import (
+	"fmt"
+	"strings"
+)
 
 // Tabs measured off herdr 0.8.2 with pane.layout, on a 149x52 tab area — the
 // same measurements internal/geometry's fixtures were built from, kept here as
@@ -9,6 +12,17 @@ import "strings"
 
 // layoutResult wraps a tab in the `result` object a pane.layout reply carries.
 func layoutResult(tab string) string { return `{"layout":` + tab + `}` }
+
+// panesResult is a pane.list reply built from "pane@tab" pairs, in the order
+// herdr listed them — which is the order the close sweep walks tabs in.
+func panesResult(panes ...string) string {
+	entries := make([]string, 0, len(panes))
+	for _, pane := range panes {
+		id, tab, _ := strings.Cut(pane, "@")
+		entries = append(entries, fmt.Sprintf(`{"pane_id":%q,"tab_id":%q,"focused":false}`, id, tab))
+	}
+	return `{"panes":[` + strings.Join(entries, ",") + `]}`
+}
 
 // zoomed is tab with its zoom flag set. A zoomed tab still reports geometry for
 // every pane it holds while showing exactly one, so every operation here
