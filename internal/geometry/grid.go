@@ -13,33 +13,37 @@ type Ratios map[SplitID]float64
 // and a [PaneID].
 const ghost = "__ghost__"
 
-// Targets derives the ratio each split would carry if the tab were an even
+// EvenRatios derives the ratio each split would carry if the tab were an even
 // grid, clamped into the range herdr will actually drive a divider to.
 //
-// Reading a target off *grid indices* rather than off cell coordinates is what
-// makes a fit idempotent: fitting an already-fitted tab computes the ratios it
-// already has, where cell arithmetic would drift by whatever the last rounding
-// cost.
-func Targets(root Node, lines Grid) Ratios {
+// A split's share is read off the tree's shape alone: how many panes each side
+// lines up along the split's axis. Nothing positional enters into it, so a
+// divider in one subtree is never a grid line in its sibling — two columns of
+// two and three rows even out to halves and thirds — and a fitted tab computes
+// exactly the ratios it already has, which is what makes a fit idempotent.
+func EvenRatios(root Node) Ratios {
 	target := Ratios{}
 	for _, split := range Splits(root) {
-		axis := split.Direction
-		near := lines.Index(axis, split.Rect.Start(axis))
-		far := lines.Index(axis, split.Rect.End(axis))
-		mid := lines.Index(axis, split.Divider())
-		if far == near {
-			// The split's whole extent projected onto one line, so it spans no
-			// grid cell and has no even share to aim at. herdr's 0.1 ratio floor
-			// should keep every split wider than [Tolerance], but this runs on
-			// the pane.created path, where being wrong is silent: the division
-			// yields NaN, which the clamp propagates, [IsEven] reads as even
-			// because every comparison against NaN is false, and [FitCalls]
-			// cannot skip for the same reason.
-			continue
-		}
-		target[split.ID] = min(max(float64(mid-near)/float64(far-near), MinRatio), MaxRatio)
+		first := float64(span(split.Kids[0], split.Direction))
+		second := float64(span(split.Kids[1], split.Direction))
+		target[split.ID] = min(max(first/(first+second), MinRatio), MaxRatio)
 	}
 	return target
+}
+
+// span is how many panes node lines up along axis: both sides of a split along
+// axis, or the busier side of one across it, since each of those spans the
+// whole node. It is vim's rule for CTRL-W =.
+func span(node Node, axis Axis) int {
+	split, ok := node.(*Split)
+	if !ok {
+		return 1
+	}
+	first, second := span(split.Kids[0], axis), span(split.Kids[1], axis)
+	if split.Direction == axis {
+		return first + second
+	}
+	return max(first, second)
 }
 
 // IsEven reports whether every divider already sits on its grid line.
@@ -49,9 +53,7 @@ func Targets(root Node, lines Grid) Ratios {
 // by hand, and is left alone.
 func IsEven(root Node, target Ratios) bool {
 	for _, split := range Splits(root) {
-		// A split [Targets] skipped has no even share to be off, so it cannot
-		// make a tab uneven — and a fit will leave it alone for the same reason.
-		if want, aimed := target[split.ID]; aimed && math.Abs(split.Ratio-want) > RatioEps {
+		if math.Abs(split.Ratio-target[split.ID]) > RatioEps {
 			return false
 		}
 	}
@@ -117,32 +119,6 @@ func relayout(node Node, rect Rect) Node {
 	return &out
 }
 
-// EvenRatios reads the ratio every split would carry if root filled its own box
-// evenly.
-//
-// The box is read off root rather than taken as an argument: every tree this
-// package hands back already fills the tab area — [Tree] returns the node whose
-// rect *is* the area, and [Without] and reinsertions both re-derive from it — so
-// an area parameter could only ever be told the same thing or told a lie.
-//
-// Gridded over the tree's own leaves rather than over a layout's panes: the two
-// differ for anything herdr reports as a pane but does not put in the split tree
-// — a plugin-owned popup — and a phantom column from one of those would bend
-// every target on that axis.
-func EvenRatios(root Node) Ratios {
-	return Targets(root, NewGrid(leafRects(root), root.Bounds()))
-}
-
-// leafRects is what a grid is read off: one box per leaf pane.
-func leafRects(root Node) []Rect {
-	leaves := Leaves(root)
-	rects := make([]Rect, 0, len(leaves))
-	for _, leaf := range leaves {
-		rects = append(rects, leaf.Rect)
-	}
-	return rects
-}
-
 // CollapsedFromEven reports whether an even tab is where root came from, one
 // close ago.
 //
@@ -171,39 +147,24 @@ func CollapsedFromEven(root Node) bool {
 	return false
 }
 
-// fitsEvenly reports whether every split of candidate that has an even share
-// already sits on it.
+// fitsEvenly reports whether every split of candidate already sits on its even
+// share.
 func fitsEvenly(candidate Node, target Ratios) bool {
 	// The re-inserted split is skipped because its ratio is one this search made
-	// up — the real one left with the pane. Splits [Targets] skipped are skipped
-	// for the reason [IsEven] skips them: no even share to be off.
-	aimed := false
+	// up — the real one left with the pane.
 	for _, split := range Splits(candidate) {
-		if split.ID == ghost {
-			continue
-		}
-		want, ok := target[split.ID]
-		if !ok {
-			continue
-		}
-		aimed = true
-		if math.Abs(split.Ratio-want) > RatioEps {
+		if split.ID != ghost && math.Abs(split.Ratio-target[split.ID]) > RatioEps {
 			return false
 		}
 	}
-	// `aimed` so this fails closed. A candidate squeezed until nothing left in
-	// it has an even share is not evidence of an even ancestry, and a vacuous
-	// "every one of no splits is on target" would read as though it were.
-	return aimed
+	return true
 }
 
 // reinsertions is every tab that would become root if one pane closed out of it.
 //
 // Two per node rather than four: which *side* of its sibling the pane went back
-// on cannot change the verdict. The re-inserted line always lands inside the
-// sibling's own box, so it falls on the same side of every other divider either
-// way, and a target is read from (mid - near) / (far - near) — which shifts with
-// the line and is unchanged by it.
+// on cannot change the verdict. A span counts panes, not their order, and the
+// re-inserted split's own ratio is never checked.
 func reinsertions(root Node) []Node {
 	var candidates []Node
 	for _, node := range Nodes(root) {
@@ -216,10 +177,7 @@ func reinsertions(root Node) []Node {
 				Rect:      node.Bounds(),
 				Kids:      [2]Node{node, back},
 			}
-			// Re-derived from the tab area down, so the candidate's rects are
-			// consistent with its own ratios — which is what makes the grid read
-			// off them the grid this tab would really have had.
-			candidates = append(candidates, relayout(swap(root, node, putback), root.Bounds()))
+			candidates = append(candidates, swap(root, node, putback))
 		}
 	}
 	return candidates

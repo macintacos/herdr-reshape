@@ -62,30 +62,3 @@ func TestTree(t *testing.T) {
 		t.Errorf("and this one nests to the left, not the right, got %#v", nestedRoot.Kids[0])
 	}
 }
-
-// TestGrid checks that leaf edges become grid lines, and near-identical ones
-// become one line. The merge is what stops a rounded rect manufacturing a
-// phantom column that no fit could ever satisfy.
-func TestGrid(t *testing.T) {
-	lines := NewGrid(paneRects(threeByTwo), tabArea)
-	if !slices.Equal(lines.Cols, []int{35, 110, 147, 184}) {
-		t.Errorf("three columns, from four lines, got %v", lines.Cols)
-	}
-	if !slices.Equal(lines.Rows, []int{1, 27, 53}) {
-		t.Errorf("and two rows, got %v", lines.Rows)
-	}
-	if got := lines.Index(AxisRight, 147); got != 2 {
-		t.Errorf("an edge lands on its own line, got %d", got)
-	}
-
-	lines = NewGrid(paneRects(offsetRows), tabArea)
-	if !slices.Equal(lines.Cols, []int{35, 110, 184}) {
-		t.Errorf("two columns, got %v", lines.Cols)
-	}
-	if !slices.Equal(lines.Rows, []int{1, 26, 53}) {
-		t.Errorf("a one-cell offset collapses instead of making a third row, got %v", lines.Rows)
-	}
-	if got := lines.Index(AxisDown, 27); got != 1 {
-		t.Errorf("and the far edge still finds the merged line, got %d", got)
-	}
-}

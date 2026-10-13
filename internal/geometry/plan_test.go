@@ -142,7 +142,7 @@ func TestFitConverges(t *testing.T) {
 // TestFitLandsOnScreen checks a fitted pane renders within landing cells of its
 // even share — the half of the proof that ratio arithmetic cannot give.
 func TestFitLandsOnScreen(t *testing.T) {
-	for name, layout := range landable {
+	for name, layout := range fixtures {
 		t.Run(name, func(t *testing.T) {
 			if got := drift(layout); got > landing {
 				t.Errorf("drift = %d cells, want within %d", got, landing)
