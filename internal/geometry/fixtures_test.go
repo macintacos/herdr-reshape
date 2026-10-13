@@ -1,6 +1,9 @@
 package geometry
 
-import "math"
+import (
+	"math"
+	"testing"
+)
 
 // Fixtures measured from herdr 0.8.2 with `pane.layout`, on a 149x52 tab area.
 //
@@ -33,8 +36,8 @@ func layoutOf(panes []paneSpec, dividers []splitSpec) Layout {
 	return layoutIn(tabArea, panes, dividers)
 }
 
-// layoutIn is layoutOf on some other tab, for the one fixture below that is
-// synthetic rather than measured.
+// layoutIn is layoutOf on some other tab, for the one fixture below measured on
+// a different screen.
 func layoutIn(area Rect, panes []paneSpec, dividers []splitSpec) Layout {
 	layout := Layout{TabID: "w1:tQ", Area: area}
 	for _, p := range panes {
@@ -88,8 +91,7 @@ var leftNested = layoutOf(
 )
 
 // offsetRows is two columns whose horizontal dividers land a cell apart — 26 on
-// the left, 27 on the right. One grid of two rows, not three; the offset is
-// rounding.
+// the left, 27 on the right — because the left one sits 0.02 off its half.
 var offsetRows = layoutOf(
 	[]paneSpec{
 		{"A", Rect{35, 1, 75, 25}},
@@ -121,16 +123,6 @@ func splitNames(root Node) []SplitID {
 		names = append(names, split.ID)
 	}
 	return names
-}
-
-// paneRects is a layout's reported pane boxes — what a grid is read off when
-// the tree has not been built yet.
-func paneRects(layout Layout) []Rect {
-	rects := make([]Rect, 0, len(layout.Panes))
-	for _, pane := range layout.Panes {
-		rects = append(rects, pane.Rect)
-	}
-	return rects
 }
 
 // threeAcross is A | B | C, split twice to the right. Lopsided: 75 cells, then
@@ -175,13 +167,10 @@ var fittedAcross = layoutOf(
 	},
 )
 
-// deepRow is what splitting the rightmost pane seven times actually produces:
-// every split halves, so the row runs 75, 37, 19, 9, 5, 2, 1, 1 cells. The
-// degenerate end is the point. Panes narrower than [Tolerance] collapse into
-// one grid line, which leaves the innermost split spanning no column at all and
-// the one outside it wanting a ratio of 1.0 — so this is the fixture that
-// reaches both the divide-by-zero guard and the clamp, and the only one that
-// cannot be made even.
+// deepRow is what splitting the rightmost pane seven times produces when no fit
+// runs in between: every split halves, so the row runs 75, 37, 19, 9, 5, 2, 1,
+// 1 cells. The degenerate end is the point — panes a single cell wide still
+// count as one pane each, so even this row fits to eighths.
 var deepRow = layoutOf(
 	[]paneSpec{
 		{"A", Rect{35, 1, 75, 52}},
@@ -305,21 +294,28 @@ var stackedPair = layoutOf(
 	[]splitSpec{{"root", AxisDown, 0.5, Rect{35, 1, 149, 52}}},
 )
 
-// squeezedPair is the one synthetic fixture: a tab four cells wide, where every
-// column edge merges under [Tolerance] and no re-inserted candidate is left with
-// a split that has an even share to aim at.
-//
-// It is here because it is the only shape that reaches fitsEvenly's fail-closed
-// `aimed` guard — a 149x52 tab is far too wide for its splits to collapse onto
-// one grid line, so every measured fixture leaves that guard untested, and the
-// suite stays green with it removed.
-var squeezedPair = layoutIn(
-	Rect{0, 0, 4, 40},
+// lopsidedColumns is three even columns — A alone, B over E, and C, D and F in
+// thirds — after splitting the middle column knocked the third onto a quarter,
+// a half and a quarter. Measured off herdr 0.9.3 on a 231x66 tab, so it is the
+// one fixture on another area, and its split ids are the path-shaped ones that
+// release reports.
+var lopsidedColumns = layoutIn(
+	Rect{0, 0, 231, 66},
 	[]paneSpec{
-		{"A", Rect{0, 0, 1, 40}},
-		{"B", Rect{1, 0, 3, 40}},
+		{"A", Rect{0, 0, 77, 66}},
+		{"B", Rect{77, 0, 77, 33}},
+		{"E", Rect{77, 33, 77, 33}},
+		{"C", Rect{154, 0, 77, 17}},
+		{"D", Rect{154, 17, 77, 33}},
+		{"F", Rect{154, 50, 77, 16}},
 	},
-	[]splitSpec{{"root", AxisRight, 0.2, Rect{0, 0, 4, 40}}},
+	[]splitSpec{
+		{"split_0_root", AxisRight, 0.3333333, Rect{0, 0, 231, 66}},
+		{"split_1_1", AxisRight, 0.5, Rect{77, 0, 154, 66}},
+		{"split_2_10", AxisDown, 0.5, Rect{77, 0, 77, 66}},
+		{"split_3_11", AxisDown, 0.25, Rect{154, 0, 77, 66}},
+		{"split_4_111", AxisDown, 0.6666667, Rect{154, 17, 77, 49}},
+	},
 )
 
 // readFixture reads a fixture the way every entry point does: its tree and its
@@ -339,10 +335,9 @@ func readFixture(layout Layout) (Node, Ratios) {
 // landing is the number of cells a fitted pane may end up from an exactly even
 // share. Targets are exact in ratio space, so this is purely what rendering
 // costs: each nesting level rounds its rect to whole cells once, and the
-// deepest layout worth fitting is a handful deep. It bounds what lands on
-// screen; [Tolerance] bounds what counts as one grid line, which is a different
-// question — and it bounds what the tests accept rather than what the package
-// does, which is why it is not a package constant.
+// deepest layout worth fitting is a handful deep. It bounds what the tests
+// accept rather than what the package does, which is why it is not a package
+// constant.
 const landing = 2
 
 // fixtures is every fixture a fit is checked against, so a new one joins all of
@@ -357,20 +352,8 @@ var fixtures = map[string]Layout{
 	"an already-fitted tab": fittedAcross,
 	"two stacked panes":     stackedPair,
 	"a deeply nested row":   deepRow,
+	"lopsided columns":      lopsidedColumns,
 }
-
-// landable is fixtures minus deepRow, the one excluded from the landing bound:
-// it holds panes a single cell wide, so no arrangement of it is within landing
-// of an even share. Everything else can actually land, and has to.
-var landable = func() map[string]Layout {
-	out := make(map[string]Layout, len(fixtures)-1)
-	for name, layout := range fixtures {
-		if name != "a deeply nested row" {
-			out[name] = layout
-		}
-	}
-	return out
-}()
 
 // chain traces the path from node down to pane, or nil if it is not below it.
 func chain(node Node, pane PaneID) []Node {
@@ -459,21 +442,26 @@ func drive(root Node, calls []Resize) Node {
 	return relayout(step(root), root.Bounds())
 }
 
+// fit runs the fit loop against simulated resizes until a pass asks for
+// nothing, returning the fitted tab and the passes it took — one more than
+// [MaxPasses] if it never settled.
+func fit(root Node) (Node, int) {
+	for done := 0; done <= MaxPasses; done++ {
+		calls := FitCalls(root, EvenRatios(root))
+		if len(calls) == 0 {
+			return root, done
+		}
+		root = drive(root, calls)
+	}
+	return root, MaxPasses + 1
+}
+
 // passes runs the real fit loop against simulated resizes, and counts the
 // rounds. A layout still asking for work after [MaxPasses] reports one more
 // than the bound, which is what a convergence check fails on.
 func passes(layout Layout) int {
-	root := Tree(layout)
-	target := EvenRatios(root)
-	for done := 0; done <= MaxPasses; done++ {
-		calls := FitCalls(root, target)
-		if len(calls) == 0 {
-			return done
-		}
-		root = drive(root, calls)
-		target = EvenRatios(root)
-	}
-	return MaxPasses + 1
+	_, done := fit(Tree(layout))
+	return done
 }
 
 // drift fits a layout, then reports the worst gap between a pane and its even
@@ -483,30 +471,115 @@ func passes(layout Layout) int {
 // the other half: what an exact ratio actually renders as once each nesting
 // level has rounded its rect to whole cells.
 func drift(layout Layout) int {
-	root := Tree(layout)
-	lines := NewGrid(leafRects(root), layout.Area)
-	target := Targets(root, lines)
-	for range MaxPasses {
-		calls := FitCalls(root, target)
-		if len(calls) == 0 {
-			break
-		}
-		root = drive(root, calls)
-		lines = NewGrid(leafRects(root), layout.Area)
-		target = Targets(root, lines)
-	}
-
+	root, _ := fit(Tree(layout))
+	target := EvenRatios(root)
 	worst := 0
-	for _, leaf := range Leaves(root) {
-		for _, axis := range []Axis{AxisRight, AxisDown} {
-			cells := len(lines.Lines(axis)) - 1
-			spanned := lines.Index(axis, leaf.Rect.End(axis)) - lines.Index(axis, leaf.Rect.Start(axis))
-			even := float64(spanned) * float64(layout.Area.Size(axis)) / float64(cells)
+	for _, axis := range []Axis{AxisRight, AxisDown} {
+		even := map[PaneID]float64{}
+		share(root, axis, float64(layout.Area.Size(axis)), target, even)
+		for _, leaf := range Leaves(root) {
 			// RoundToEven, not math.Round: the landing bound was measured
 			// against a half-to-even rounding, so a pane exactly 2.5 cells off
 			// its share has to fall on the same side of it here.
-			worst = max(worst, int(math.RoundToEven(math.Abs(float64(leaf.Rect.Size(axis))-even))))
+			worst = max(worst, int(math.RoundToEven(math.Abs(float64(leaf.Rect.Size(axis))-even[leaf.Pane]))))
 		}
 	}
 	return worst
+}
+
+// share is the size every pane under node would have along axis with each
+// split exactly on its target, before herdr rounds a single cell.
+func share(node Node, axis Axis, size float64, target Ratios, into map[PaneID]float64) {
+	split, ok := node.(*Split)
+	if !ok {
+		into[node.(*Leaf).Pane] = size
+		return
+	}
+	first, second := size, size
+	if split.Direction == axis {
+		first = size * target[split.ID]
+		second = size - first
+	}
+	share(split.Kids[0], axis, first, target, into)
+	share(split.Kids[1], axis, second, target, into)
+}
+
+// tab is a tab driven the way a user drives one, a split, a close or a drag at
+// a time, with this plugin's hooks answering each the way the manifest wires
+// them. The gates are reshape.Created's and reshape.closedTab's, restated.
+type tab struct {
+	t    *testing.T
+	root Node
+}
+
+// newTab is a one-pane tab holding A, on the measured tab area.
+func newTab(t *testing.T) *tab {
+	return &tab{t: t, root: &Leaf{Pane: "A", Rect: tabArea}}
+}
+
+// split is herdr's pane split — fresh lands after pane on a halved split —
+// followed by the pane.created hook.
+func (tb *tab) split(pane PaneID, axis Axis, fresh PaneID) {
+	tb.t.Helper()
+	path := chain(tb.root, pane)
+	if path == nil {
+		tb.t.Fatalf("split: no pane %s", pane)
+	}
+	leaf := path[len(path)-1]
+	halved := &Split{
+		ID:        SplitID("split:" + fresh),
+		Direction: axis,
+		Ratio:     0.5,
+		Kids:      [2]Node{leaf, &Leaf{Pane: fresh}},
+	}
+	tb.root = relayout(swap(tb.root, leaf, halved), tabArea)
+	if before := Without(tb.root, fresh); before != nil && IsEven(before, EvenRatios(before)) {
+		tb.fit()
+	}
+}
+
+// close is herdr's pane close — the split collapses into the sibling —
+// followed by the pane.closed hook.
+func (tb *tab) close(pane PaneID) {
+	tb.t.Helper()
+	tb.root = Without(tb.root, pane)
+	if CollapsedFromEven(tb.root) {
+		tb.fit()
+	}
+}
+
+// drag is a resize by hand, which no hook answers.
+func (tb *tab) drag(pane PaneID, direction Direction, amount float64) {
+	tb.root = drive(tb.root, []Resize{{Pane: pane, Direction: direction, Amount: amount}})
+}
+
+func (tb *tab) fit() {
+	tb.t.Helper()
+	var done int
+	if tb.root, done = fit(tb.root); done > MaxPasses {
+		tb.t.Errorf("the fit never settled")
+	}
+}
+
+// want checks the tab holds exactly these panes, each within landing cells of
+// its share of the tab's width and height.
+func (tb *tab) want(shares map[PaneID][2]float64) {
+	tb.t.Helper()
+	leaves := Leaves(tb.root)
+	if len(leaves) != len(shares) {
+		tb.t.Errorf("want %d panes, got %v", len(shares), paneNames(tb.root))
+	}
+	for _, leaf := range leaves {
+		share, ok := shares[leaf.Pane]
+		if !ok {
+			tb.t.Errorf("unexpected pane %s", leaf.Pane)
+			continue
+		}
+		for i, axis := range []Axis{AxisRight, AxisDown} {
+			want := share[i] * float64(tabArea.Size(axis))
+			if got := leaf.Rect.Size(axis); math.Abs(float64(got)-want) > landing {
+				tb.t.Errorf("%s is %d cells along %s, want %.1f", leaf.Pane, got, axis, want)
+			}
+		}
+	}
 }

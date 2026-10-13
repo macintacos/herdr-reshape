@@ -14,12 +14,15 @@ import (
 func layoutResult(tab string) string { return `{"layout":` + tab + `}` }
 
 // panesResult is a pane.list reply built from "pane@tab" pairs, in the order
-// herdr listed them — which is the order the close sweep walks tabs in.
+// herdr listed them — which is the order the close sweep walks tabs in. Each
+// pane's workspace is its tab id's prefix, as herdr numbers them.
 func panesResult(panes ...string) string {
 	entries := make([]string, 0, len(panes))
 	for _, pane := range panes {
 		id, tab, _ := strings.Cut(pane, "@")
-		entries = append(entries, fmt.Sprintf(`{"pane_id":%q,"tab_id":%q,"focused":false}`, id, tab))
+		workspace, _, _ := strings.Cut(tab, ":")
+		entries = append(entries, fmt.Sprintf(
+			`{"pane_id":%q,"tab_id":%q,"workspace_id":%q,"focused":false}`, id, tab, workspace))
 	}
 	return `{"panes":[` + strings.Join(entries, ",") + `]}`
 }

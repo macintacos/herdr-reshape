@@ -233,21 +233,25 @@ func TestMoveSendsTheDirectionItWasGiven(t *testing.T) {
 	}
 }
 
-// TestClosedSweepsEveryTab pins the third rule. pane.closed and pane.exited
-// both fire after the split has collapsed, so the event's own pane is already
-// pane_not_found, and neither event carries a tab id — so every tab is read,
-// not just whichever one has focus. The tab that lost a pane is routinely one
-// nobody is looking at.
-func TestClosedSweepsEveryTab(t *testing.T) {
+// TestClosedSweepsEveryTabInItsWorkspace pins the third rule. pane.closed and
+// pane.exited both fire after the split has collapsed, so the event's own pane
+// is already pane_not_found, and neither event carries a tab id — so every tab
+// in the event's workspace is read, not just whichever one has focus. The tab
+// that lost a pane is routinely one nobody is looking at; a tab in another
+// workspace is one this close never touched.
+func TestClosedSweepsEveryTabInItsWorkspace(t *testing.T) {
 	stub := serveHerdr(t, map[string]string{
 		"pane.layout": evenTab,
 		"pane.list": `{"result":{"panes":[
-			{"pane_id":"B","tab_id":"w1:tQ","focused":true},
-			{"pane_id":"D","tab_id":"w1:tR","focused":false}]}}`,
+			{"pane_id":"B","tab_id":"w1:tQ","workspace_id":"w1","focused":true},
+			{"pane_id":"D","tab_id":"w1:tR","workspace_id":"w1","focused":false},
+			{"pane_id":"E","tab_id":"w2:tS","workspace_id":"w2","focused":false}]}}`,
 	})
 	// A hook id is set, and closed must still ignore it: it names the pane that
 	// just went away.
 	setPane(t, "A", "A")
+	t.Setenv("HERDR_PLUGIN_EVENT_JSON",
+		`{"event":"pane_closed","data":{"type":"pane_closed","pane_id":"A","workspace_id":"w1"}}`)
 
 	if err := run(t, "closed"); err != nil {
 		t.Fatalf("closed: %v", err)
@@ -267,6 +271,9 @@ func TestClosedSweepsEveryTab(t *testing.T) {
 	}
 	if slices.Contains(read, any("A")) {
 		t.Errorf("closed read the event's own pane, which is already gone: %v", read)
+	}
+	if slices.Contains(read, any("E")) {
+		t.Errorf("closed read a tab in another workspace: %v", read)
 	}
 }
 

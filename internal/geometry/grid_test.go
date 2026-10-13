@@ -8,8 +8,9 @@ import (
 	"testing"
 )
 
-// TestTargets checks a target is its divider's grid index over the span the
-// split covers — not its cell coordinates, which is what makes a fit idempotent.
+// TestTargets checks a target is the share of panes its first side lines up
+// along the split — not its cell coordinates, which is what makes a fit
+// idempotent.
 func TestTargets(t *testing.T) {
 	_, target := readFixture(threeAcross)
 	if math.Abs(target["root"]-1.0/3.0) >= 1e-9 {
@@ -103,21 +104,12 @@ func TestCollapsedFromEven(t *testing.T) {
 		{evenRowsMinusMiddle, true, "and the pane goes back on the axis it left by, not always sideways"},
 		{tunedMinusOne, false, "a tab dragged to a fifth did not come from an even one"},
 		{tunedMinusLast, false, "nor did one dragged to nine tenths"},
-		// A row too deep to ever be even is also too deep to have come from
-		// one, and the degenerate splits it ends in are the ones Targets skips
-		// — so this is the fixture that would pass vacuously if the search took
-		// "no split had a target to miss" for "every split hit its target".
-		{deepRow, false, "a degenerate row is unreachable"},
+		{deepRow, false, "nor did a row halved seven times over"},
 		// The two gates have to agree on where even stops. offsetRows sits 0.02
 		// off its grid line, which is twenty times RatioEps, so the created
 		// gate already leaves it alone; a close gate that fitted it would
 		// square up a tab the split gate had just promised not to touch.
 		{offsetRows, false, "and both gates say so"},
-		// The fail-closed half of fitsEvenly, which no measured fixture is
-		// narrow enough to reach: on a four-cell tab every candidate is squeezed
-		// until not one of its splits has an even share, and "none of no splits
-		// missed" must not read as evidence of an even ancestry.
-		{squeezedPair, false, "a candidate with no even share to hit is not evidence of one"},
 	} {
 		t.Run(c.why, func(t *testing.T) {
 			if got := CollapsedFromEven(Tree(c.layout)); got != c.want {
@@ -131,33 +123,28 @@ func TestCollapsedFromEven(t *testing.T) {
 	}
 }
 
-// TestDegenerateRow checks a row too deep to even out degrades instead of
-// failing.
-//
-// Splitting the rightmost pane over and over ends in panes a single cell wide.
-// Their edges collapse into one grid line, which leaves the innermost split
-// spanning no column and the one outside it wanting everything — the two ways
-// this arithmetic can come apart, and both are reachable by hand in a few
-// keystrokes.
-func TestDegenerateRow(t *testing.T) {
+// TestDeepRow checks a row halved down to one-cell panes still evens out, and
+// that a row too long for herdr's ratio floor settles on it rather than chasing
+// a target it cannot reach.
+func TestDeepRow(t *testing.T) {
 	root, target := readFixture(deepRow)
-	want := []SplitID{"s0", "s1", "s2", "s3", "s4", "s5", "s6"}
-	if got := splitNames(root); !slices.Equal(got, want) {
-		t.Errorf("seven dividers, got %v", got)
-	}
-	if _, aimed := target["s6"]; aimed {
-		t.Error("a split spanning no grid column has no even share to aim at")
-	}
-	// Unclamped, s5's target stays at 1.0 — a ratio herdr will not accept — so
-	// every pass re-issues the same refused call and the tab never reads as even.
-	if target["s5"] != MaxRatio {
-		t.Errorf("and the one outside it wants 1.0, which is clamped, got %v", target["s5"])
+	for i, id := range splitNames(root) {
+		if want := 1.0 / float64(8-i); math.Abs(target[id]-want) >= 1e-9 {
+			t.Errorf("%s leads %d panes, so wants %v, got %v", id, 8-i, want, target[id])
+		}
 	}
 	if got := passes(deepRow); got != 1 {
-		t.Errorf("it still settles, in one pass, got %d", got)
+		t.Errorf("it settles in one pass, got %d", got)
 	}
-	if got := drift(deepRow); got <= landing {
-		t.Errorf("though one-cell panes can never land evenly, got %d", got)
+
+	row := newTab(t)
+	const panes = "ABCDEFGHIJK"
+	for i := 1; i < len(panes); i++ {
+		row.split(PaneID(panes[i-1:i]), AxisRight, PaneID(panes[i:i+1]))
+	}
+	// Eleven across wants 1/11 for A, which is under the floor.
+	if got := row.root.(*Split).Ratio; math.Abs(got-MinRatio) > RatioEps {
+		t.Errorf("A settles on the floor, got %v", got)
 	}
 }
 
@@ -201,5 +188,167 @@ func TestParsesRealJSON(t *testing.T) {
 	}
 	if IsEven(root, target) {
 		t.Error("which this reply is not yet on")
+	}
+}
+
+// TestSiblingsEvenOutApart checks that a split's even share is its own
+// subtree's business. A divider in one column is no row line in the next.
+func TestSiblingsEvenOutApart(t *testing.T) {
+	root, target := readFixture(lopsidedColumns)
+	want := Ratios{
+		"split_0_root": 1.0 / 3.0,
+		"split_1_1":    0.5,
+		"split_2_10":   0.5,
+		"split_3_11":   1.0 / 3.0,
+		"split_4_111":  0.5,
+	}
+	for id, ratio := range want {
+		if math.Abs(target[id]-ratio) >= 1e-9 {
+			t.Errorf("%s wants %v, got %v", id, ratio, target[id])
+		}
+	}
+	if IsEven(root, target) {
+		t.Error("a third column on a quarter, a half and a quarter is off the grid")
+	}
+}
+
+// TestScenarios drives tabs the way a user does, with the hooks firing after
+// every split and close, and checks where every pane ends up as a share of the
+// tab's width and height.
+func TestScenarios(t *testing.T) {
+	const third = 1.0 / 3.0
+
+	// A | B over E | C over D over F, built the way the bug report built it.
+	columns := func(t *testing.T) *tab {
+		tb := newTab(t)
+		tb.split("A", AxisRight, "B")
+		tb.split("B", AxisRight, "C")
+		tb.split("C", AxisDown, "D")
+		tb.split("D", AxisDown, "F")
+		tb.split("B", AxisDown, "E")
+		return tb
+	}
+	columnShares := map[PaneID][2]float64{
+		"A": {third, 1},
+		"B": {third, 0.5}, "E": {third, 0.5},
+		"C": {third, third}, "D": {third, third}, "F": {third, third},
+	}
+
+	for _, c := range []struct {
+		why string
+		run func(*testing.T)
+	}{
+		{"splitting one column leaves the next column's rows alone", func(t *testing.T) {
+			columns(t).want(columnShares)
+		}},
+		{"whichever column is split first", func(t *testing.T) {
+			tb := newTab(t)
+			tb.split("A", AxisRight, "B")
+			tb.split("B", AxisRight, "C")
+			tb.split("B", AxisDown, "E")
+			tb.split("C", AxisDown, "D")
+			tb.split("D", AxisDown, "F")
+			tb.want(columnShares)
+		}},
+		{"and the same holds for rows", func(t *testing.T) {
+			tb := newTab(t)
+			tb.split("A", AxisDown, "B")
+			tb.split("B", AxisDown, "C")
+			tb.split("C", AxisRight, "D")
+			tb.split("D", AxisRight, "F")
+			tb.split("B", AxisRight, "E")
+			tb.want(map[PaneID][2]float64{
+				"A": {1, third},
+				"B": {0.5, third}, "E": {0.5, third},
+				"C": {third, third}, "D": {third, third}, "F": {third, third},
+			})
+		}},
+		{"splitting the first column too", func(t *testing.T) {
+			tb := columns(t)
+			tb.split("A", AxisDown, "G")
+			tb.want(map[PaneID][2]float64{
+				"A": {third, 0.5}, "G": {third, 0.5},
+				"B": {third, 0.5}, "E": {third, 0.5},
+				"C": {third, third}, "D": {third, third}, "F": {third, third},
+			})
+		}},
+		{"a close evens out the column it happened in", func(t *testing.T) {
+			tb := columns(t)
+			tb.close("D")
+			tb.want(map[PaneID][2]float64{
+				"A": {third, 1},
+				"B": {third, 0.5}, "E": {third, 0.5},
+				"C": {third, 0.5}, "F": {third, 0.5},
+			})
+		}},
+		{"and leaves the other columns alone", func(t *testing.T) {
+			tb := columns(t)
+			tb.close("E")
+			tb.want(map[PaneID][2]float64{
+				"A": {third, 1},
+				"B": {third, 1},
+				"C": {third, third}, "D": {third, third}, "F": {third, third},
+			})
+		}},
+		{"closing a whole column halves the two left", func(t *testing.T) {
+			tb := columns(t)
+			tb.close("A")
+			tb.want(map[PaneID][2]float64{
+				"B": {0.5, 0.5}, "E": {0.5, 0.5},
+				"C": {0.5, third}, "D": {0.5, third}, "F": {0.5, third},
+			})
+		}},
+		{"a 2x2 grid", func(t *testing.T) {
+			tb := newTab(t)
+			tb.split("A", AxisRight, "B")
+			tb.split("A", AxisDown, "C")
+			tb.split("B", AxisDown, "D")
+			tb.want(map[PaneID][2]float64{
+				"A": {0.5, 0.5}, "B": {0.5, 0.5}, "C": {0.5, 0.5}, "D": {0.5, 0.5},
+			})
+		}},
+		{"a row of three under one full-width pane", func(t *testing.T) {
+			tb := newTab(t)
+			tb.split("A", AxisDown, "B")
+			tb.split("B", AxisRight, "C")
+			tb.split("C", AxisRight, "D")
+			tb.want(map[PaneID][2]float64{
+				"A": {1, 0.5},
+				"B": {third, 0.5}, "C": {third, 0.5}, "D": {third, 0.5},
+			})
+		}},
+		// The grid half of "even": a column holding two panes side by side is
+		// two columns wide, so the pane beside it takes a third, not a half.
+		{"a column split across takes two columns' width", func(t *testing.T) {
+			tb := newTab(t)
+			tb.split("A", AxisRight, "B")
+			tb.split("B", AxisDown, "C")
+			tb.split("C", AxisRight, "D")
+			tb.want(map[PaneID][2]float64{
+				"A": {third, 1},
+				"B": {2 * third, 0.5},
+				"C": {third, 0.5}, "D": {third, 0.5},
+			})
+		}},
+		{"a split leaves a hand-tuned tab alone", func(t *testing.T) {
+			tb := newTab(t)
+			tb.split("A", AxisRight, "B")
+			tb.drag("A", DirectionRight, 0.2)
+			tb.split("B", AxisDown, "C")
+			tb.want(map[PaneID][2]float64{
+				"A": {0.7, 1},
+				"B": {0.3, 0.5}, "C": {0.3, 0.5},
+			})
+		}},
+		{"and so does a close", func(t *testing.T) {
+			tb := newTab(t)
+			tb.split("A", AxisRight, "B")
+			tb.split("B", AxisRight, "C")
+			tb.drag("A", DirectionRight, 0.2)
+			tb.close("C")
+			tb.want(map[PaneID][2]float64{"A": {0.8 / 1.5, 1}, "B": {0.7 / 1.5, 1}})
+		}},
+	} {
+		t.Run(c.why, c.run)
 	}
 }

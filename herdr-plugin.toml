@@ -63,11 +63,14 @@ command = ["./bin/herdr-reshape", "created"]
 # and puzzle the user about the other half.
 #
 # Both fire *after* the collapse, and neither payload carries a tab id — the
-# pane_id they do carry is already `pane_not_found`. So `closed` reads every tab
+# pane_id they do carry is already `pane_not_found`. Both do carry a
+# workspace_id (measured on 0.9.3), so `closed` reads every tab in that workspace
 # rather than following focus: the tab that lost a pane is routinely one nobody
 # is looking at, which is the state a scripted fan-out tears itself down in. The
 # gate keeps that cheap — a tab no close knocked off the grid costs one
-# `pane.layout` and nothing more.
+# `pane.layout` and nothing more. It cannot tell a tab that just lost a pane from
+# one that has looked that way all along, so stopping at the workspace is what
+# keeps a close in one workspace from refitting a tab in another.
 [[events]]
 on      = "pane.closed"
 command = ["./bin/herdr-reshape", "closed"]

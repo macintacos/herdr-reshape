@@ -3,10 +3,9 @@
 //
 // It computes and nothing else — no socket, no files, no clock. herdr reports a
 // tab flat (an area, a box per pane, a box per divider, and no parent links at
-// all); [Tree] puts the nesting back, [NewGrid] projects every leaf edge onto
-// shared column and row lines, and everything above those two is arithmetic
-// over grid indices rather than over cells. That is what makes a fit
-// idempotent; see [Targets].
+// all); [Tree] puts the nesting back, and everything above it is arithmetic
+// over the tree's shape rather than over cells. That is what makes a fit
+// idempotent; see [EvenRatios].
 //
 // Four things herdr does that its documentation does not say, every one
 // measured against 0.8.2 and every one load-bearing here:
@@ -26,10 +25,7 @@
 //     [CollapsedFromEven].
 package geometry
 
-import (
-	"fmt"
-	"slices"
-)
+import "fmt"
 
 // herdr's opaque identifiers. Distinct types because nothing here ever means
 // one where it says another, and a plain string would let it.
@@ -40,16 +36,11 @@ type (
 	SplitID string
 	// TabID identifies a tab.
 	TabID string
+	// WorkspaceID identifies a workspace.
+	WorkspaceID string
 )
 
 const (
-	// Tolerance is the number of cells two leaf edges may differ by and still
-	// count as one grid line. A split's rect rounds independently of its
-	// parent's, so an edge two panes share can land a cell apart. herdr clamps a
-	// split's ratio at 0.1, so the narrowest pane on a 149-cell tab is about 15
-	// cells — far wider than this, which is why no real column is ever swallowed.
-	Tolerance = 2
-
 	// RatioEps is how far a split's ratio may sit from its grid target and still
 	// read as even. Ratios come back as f32 — 0.65 reads as 0.6499999 — so this
 	// has to clear that noise, and it stays under a cell on any plausible tab
@@ -205,9 +196,10 @@ type Layout struct {
 // PaneEntry is the slice of a pane.list reply this plugin reads. No geometry
 // below touches it — it is the wire type the socket client decodes into.
 type PaneEntry struct {
-	PaneID  PaneID `json:"pane_id"`
-	TabID   TabID  `json:"tab_id"`
-	Focused bool   `json:"focused"`
+	PaneID      PaneID      `json:"pane_id"`
+	TabID       TabID       `json:"tab_id"`
+	WorkspaceID WorkspaceID `json:"workspace_id"`
+	Focused     bool        `json:"focused"`
 }
 
 // Node is one node of a tab's split tree: a [*Leaf] or a [*Split], and nothing
@@ -385,72 +377,3 @@ func nodeFrom(box layoutBox, boxes map[Rect]layoutBox) Node {
 		Kids:      [2]Node{nodeFrom(first, boxes), nodeFrom(second, boxes)},
 	}
 }
-
-// Grid is the column and row lines every leaf edge was projected onto.
-//
-// N columns means N + 1 lines, the outermost two being the tab's own edges.
-type Grid struct {
-	Cols []int
-	Rows []int
-}
-
-// Lines are the lines running across axis.
-func (g Grid) Lines(axis Axis) []int {
-	if axis == AxisRight {
-		return g.Cols
-	}
-	return g.Rows
-}
-
-// Index is which line coord was projected onto.
-func (g Grid) Index(axis Axis, coord int) int {
-	lines := g.Lines(axis)
-	best, nearest := 0, distance(lines[0], coord)
-	for i := 1; i < len(lines); i++ {
-		// Strictly nearer, so a coordinate exactly between two lines takes the
-		// first — which is the behaviour the fixtures were measured against.
-		if d := distance(lines[i], coord); d < nearest {
-			best, nearest = i, d
-		}
-	}
-	return best
-}
-
-// NewGrid projects every leaf edge onto shared column and row lines.
-//
-// This is what turns a tab into an N x M grid, and the merge is what keeps it
-// honest: two panes meeting on the same line can report edges a cell apart,
-// each having rounded off its own parent's ratio, and an unmerged pair would
-// manufacture a one-cell column no fit could ever satisfy.
-func NewGrid(rects []Rect, area Rect) Grid {
-	return Grid{
-		Cols: mergeEdges(edges(rects, area, AxisRight)),
-		Rows: mergeEdges(edges(rects, area, AxisDown)),
-	}
-}
-
-// edges is every edge along axis that could be a grid line, the area's included.
-func edges(rects []Rect, area Rect, axis Axis) []int {
-	found := make([]int, 0, 2*(len(rects)+1))
-	found = append(found, area.Start(axis), area.End(axis))
-	for _, rect := range rects {
-		found = append(found, rect.Start(axis), rect.End(axis))
-	}
-	return found
-}
-
-// mergeEdges is sorted edges, keeping the first of each run that falls within
-// [Tolerance].
-func mergeEdges(found []int) []int {
-	slices.Sort(found)
-	var kept []int
-	for _, edge := range found {
-		if len(kept) == 0 || edge-kept[len(kept)-1] > Tolerance {
-			kept = append(kept, edge)
-		}
-	}
-	return kept
-}
-
-// distance is |a - b| for two coordinates, which Go has no builtin for.
-func distance(a, b int) int { return max(a-b, b-a) }

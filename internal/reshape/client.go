@@ -315,3 +315,20 @@ func ThisPane(getenv func(string) string, c *Client) (geometry.PaneID, error) {
 	}
 	return c.FocusedPane()
 }
+
+// EventWorkspace reads the workspace a pane event fired in out of the event's
+// JSON payload, returning empty when it names none.
+//
+// The payload rather than HERDR_WORKSPACE_ID, which is hook context — and hook
+// context is what herdr has documented as following focus.
+func EventWorkspace(event string) geometry.WorkspaceID {
+	var payload struct {
+		Data struct {
+			WorkspaceID geometry.WorkspaceID `json:"workspace_id"`
+		} `json:"data"`
+	}
+	if json.Unmarshal([]byte(event), &payload) != nil {
+		return ""
+	}
+	return payload.Data.WorkspaceID
+}
