@@ -104,9 +104,10 @@ keybindings, created and closed by pane events.`,
 			// read: measured on 0.8.2, pane.closed and pane.exited both fire
 			// after the split has collapsed, so pane.layout answers
 			// pane_not_found for it. Neither event carries a tab id either, so
-			// there is no handle on the tab that lost a pane, and the sweep
-			// stands in for one.
-			_, err := client.Closed()
+			// there is no handle on the tab that lost a pane, and a sweep of
+			// the workspace it was in stands in for one.
+			workspace := reshape.EventWorkspace(os.Getenv("HERDR_PLUGIN_EVENT_JSON"))
+			_, err := client.Closed(workspace)
 			return err
 		},
 	}

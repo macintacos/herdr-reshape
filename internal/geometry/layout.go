@@ -36,6 +36,8 @@ type (
 	SplitID string
 	// TabID identifies a tab.
 	TabID string
+	// WorkspaceID identifies a workspace.
+	WorkspaceID string
 )
 
 const (
@@ -194,9 +196,10 @@ type Layout struct {
 // PaneEntry is the slice of a pane.list reply this plugin reads. No geometry
 // below touches it — it is the wire type the socket client decodes into.
 type PaneEntry struct {
-	PaneID  PaneID `json:"pane_id"`
-	TabID   TabID  `json:"tab_id"`
-	Focused bool   `json:"focused"`
+	PaneID      PaneID      `json:"pane_id"`
+	TabID       TabID       `json:"tab_id"`
+	WorkspaceID WorkspaceID `json:"workspace_id"`
+	Focused     bool        `json:"focused"`
 }
 
 // Node is one node of a tab's split tree: a [*Leaf] or a [*Split], and nothing

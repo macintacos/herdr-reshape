@@ -464,3 +464,19 @@ func TestThisPane(t *testing.T) {
 		}
 	})
 }
+
+// TestEventWorkspace reads the payload herdr 0.9.3 hands a close hook, and
+// falls back to no workspace — a sweep of all of them — when it names none.
+func TestEventWorkspace(t *testing.T) {
+	for event, want := range map[string]geometry.WorkspaceID{
+		`{"event":"pane_closed","data":{"type":"pane_closed","pane_id":"w1V:p2","workspace_id":"w1V"}}`: "w1V",
+		`{"event":"pane_exited","data":{"type":"pane_exited","pane_id":"w1V:p3","workspace_id":"w1V"}}`: "w1V",
+		`{"event":"pane_closed","data":{"type":"pane_closed","pane_id":"w1V:p2"}}`:                      "",
+		``:         "",
+		`not json`: "",
+	} {
+		if got := EventWorkspace(event); got != want {
+			t.Errorf("EventWorkspace(%s) = %q, want %q", event, got, want)
+		}
+	}
+}

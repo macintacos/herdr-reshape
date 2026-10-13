@@ -171,8 +171,8 @@ func (c *Client) Created(pane geometry.PaneID) (bool, error) {
 	return true, nil
 }
 
-// Closed fits every tab a close knocked off the grid, and reports how many it
-// fitted.
+// Closed fits every tab in workspace a close knocked off the grid, and reports
+// how many it fitted. An empty workspace sweeps them all.
 //
 // A sweep, because the event names no tab to look at: pane.closed and
 // pane.exited both fire after herdr has collapsed the split, and the pane_id
@@ -181,9 +181,13 @@ func (c *Client) Created(pane geometry.PaneID) (bool, error) {
 // which is where a scripted fan-out tears itself down.
 //
 // The gate is what makes a sweep safe: a tab a close did not knock off the grid
-// is one closedTab declines, so every tab but the one that lost a pane costs a
-// layout read and nothing more.
-func (c *Client) Closed() (int, error) {
+// is one closedTab declines. It cannot tell a tab that just lost a pane from
+// one that has looked that way all along, though, which is why the sweep stops
+// at the workspace.
+func (c *Client) Closed(workspace geometry.WorkspaceID) (int, error) {
+	// Filtered here rather than by pane.list's workspace_id: closing a
+	// workspace's last pane closes the workspace, and the filtered list then
+	// answers workspace_not_found.
 	panes, err := c.Panes()
 	if err != nil {
 		return 0, err
@@ -196,7 +200,7 @@ func (c *Client) Closed() (int, error) {
 	var failed error
 	swept := map[geometry.TabID]bool{}
 	for _, entry := range panes {
-		if swept[entry.TabID] {
+		if swept[entry.TabID] || workspace != "" && entry.WorkspaceID != workspace {
 			continue
 		}
 		swept[entry.TabID] = true

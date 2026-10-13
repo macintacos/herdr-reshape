@@ -360,17 +360,18 @@ func TestClosedLeavesAHandTunedTabAlone(t *testing.T) {
 	wantMethods(t, f, "pane.layout")
 }
 
-// TestClosedSweepsEveryTab is why the close path lists panes instead of
-// following focus: the tab that lost one is the tab nobody is looking at,
-// which is exactly where a scripted fan-out tears itself down.
-func TestClosedSweepsEveryTab(t *testing.T) {
+// TestClosedSweepsEveryTabInItsWorkspace is why the close path lists panes
+// instead of following focus: the tab that lost one is the tab nobody is
+// looking at, which is exactly where a scripted fan-out tears itself down. A
+// tab in another workspace was not touched by this close, so it is not read.
+func TestClosedSweepsEveryTabInItsWorkspace(t *testing.T) {
 	client, f := clientOf(
-		panesResult("A@w1:tQ", "C@w1:tR", "D@w1:tR"),
+		panesResult("B@w2:tS", "A@w1:tQ", "C@w1:tR", "D@w1:tR"),
 		layoutResult(evenMinusMiddle), layoutResult(fittedAcross),
 		layoutResult(offsetRows),
 	)
 
-	fitted, err := client.Closed()
+	fitted, err := client.Closed("w1")
 	if err != nil {
 		t.Fatalf("Closed: %v", err)
 	}
@@ -379,7 +380,27 @@ func TestClosedSweepsEveryTab(t *testing.T) {
 	}
 	// One layout per tab rather than per pane: D is w1:tR's second pane.
 	wantMethods(t, f, "pane.list", "pane.layout", "pane.layout", "pane.layout")
+	wantCall(t, f, 2, "pane.layout", map[string]any{"pane_id": "A"})
 	wantCall(t, f, 4, "pane.layout", map[string]any{"pane_id": "C"})
+}
+
+// TestClosedSweepsEveryWorkspaceWhenTheEventNamesNone keeps a herdr whose
+// close payload carries no workspace on the sweep it had before there was one.
+func TestClosedSweepsEveryWorkspaceWhenTheEventNamesNone(t *testing.T) {
+	client, f := clientOf(
+		panesResult("A@w1:tQ", "C@w2:tR"),
+		layoutResult(evenMinusMiddle), layoutResult(fittedAcross),
+		layoutResult(offsetRows),
+	)
+
+	fitted, err := client.Closed("")
+	if err != nil {
+		t.Fatalf("Closed: %v", err)
+	}
+	if fitted != 1 {
+		t.Errorf("fitted %d tabs, want the one a close knocked off the grid", fitted)
+	}
+	wantMethods(t, f, "pane.list", "pane.layout", "pane.layout", "pane.layout")
 }
 
 // TestClosedSweepsPastATabThatFails covers this path's normal weather: a burst
@@ -392,7 +413,7 @@ func TestClosedSweepsPastATabThatFails(t *testing.T) {
 		layoutResult(evenMinusMiddle), layoutResult(fittedAcross),
 	)
 
-	fitted, err := client.Closed()
+	fitted, err := client.Closed("w1")
 	if err == nil {
 		t.Error("the tab that went is still reported")
 	}
